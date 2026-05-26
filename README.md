@@ -1,0 +1,117 @@
+# Claude Customizations
+
+Shared Claude Code customizations for the team. Drop-in upgrades to `~/.claude/` that enforce a multi-persona AI team architecture, structured plan-mode standards, and tier-based effort routing — with a Stop hook that catches architecture violations deterministically.
+
+## What's in here
+
+| File / dir | Purpose |
+|---|---|
+| `CLAUDE.md` | Global Claude instructions (~575 lines). Tier framework, persona architecture, plan-mode standards, memory discipline. |
+| `personas/*.md` | 15 extended persona definitions (AI QA, Architect, Discovery Researcher, etc.) loaded as subagents during Tier 3+ tasks. |
+| `hooks/phase3-spawn-audit.py` | Stop hook that enforces persona spawn fidelity. Blocks turns where Tier 3+ was declared but the team wasn't actually spawned. |
+| `settings.json.template` | Sanitized settings.json template. Wire the hook in here (see setup). |
+| `memory/MEMORY.md.template` | Empty memory index template. Memories accumulate per-workspace as you use Claude Code. |
+| `install.sh` | One-command setup. Symlinks (default) or copies files into `~/.claude/`. |
+
+## What's NOT in here (and why)
+
+- **`settings.json`** (the real file) — contains API keys and user-specific paths. Use the template + your own credentials.
+- **Workspace memories** — `memory/*.md` is gitignored. Memories are per-workspace and personal; only the empty index template ships.
+- **`~/.claude/hooks/`** in active form — that subdirectory is root-owned on some Claude Code installs. The Stop hook script ships in `hooks/` here but is installed to `~/.claude/` root (sibling of `settings.json`).
+
+## Quick install
+
+```bash
+git clone <repo-url> ~/claude-customizations
+cd ~/claude-customizations
+./install.sh
+```
+
+This symlinks `CLAUDE.md`, all `personas/*.md`, and `phase3-spawn-audit.py` into `~/.claude/`. Existing files are backed up to `~/.claude/.backup-<timestamp>/` first.
+
+Use `./install.sh --copy` if you want independent copies instead of symlinks (no auto-updates via `git pull`).
+
+## Settings.json setup (manual — has secrets)
+
+After `install.sh` runs, wire the Stop hook into your `~/.claude/settings.json`:
+
+1. If you have **no** existing `settings.json`: copy `settings.json.template` to `~/.claude/settings.json` and fill in any placeholders (or delete the `env` block if you don't use Langfuse).
+2. If you **already have** a `settings.json`: add this entry to your existing `hooks.Stop` array:
+
+   ```json
+   {
+     "hooks": [
+       {
+         "type": "command",
+         "command": "/usr/bin/python3 ~/.claude/phase3-spawn-audit.py"
+       }
+     ]
+   }
+   ```
+
+3. Restart Claude Code (or start a new session) — hooks load at session start.
+
+## Verifying the hook fires
+
+The hook runs after every assistant turn but is silent unless a Tier 3+ task was declared without proper spawn behavior. To verify it's wired correctly:
+
+```bash
+# Manually test the hook with a synthetic violation:
+cat > /tmp/test.jsonl << 'EOF'
+{"type":"user","message":{"role":"user","content":"test"}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"[Tier: Analytical — test]\nTask: Review & Critique | Personas: PM (lead), Architect, Engineer\n\nNo spawn..."}]}}
+EOF
+echo '{"session_id":"test","transcript_path":"/tmp/test.jsonl","stop_hook_active":false}' \
+  | /usr/bin/python3 ~/.claude/phase3-spawn-audit.py
+echo "exit code: $?"
+rm /tmp/test.jsonl
+```
+
+Expected output: a "Phase 3 spawn-audit FAILED" message and exit code `2`. If you get exit code `0`, the hook isn't catching violations — check the script path.
+
+## The frameworks at a glance
+
+CLAUDE.md defines three interlocking systems:
+
+### Effort Routing (Tiers)
+Every response starts with `[Tier: <Quick|Standard|Analytical|Deep> — <reason>]`. Tier is set by intent keywords, file counts, complexity, and risk. Tier 3+ automatically invokes the persona architecture.
+
+### Persona Architecture
+On Tier 3+ tasks, the orchestrator spawns multiple persona subagents in parallel (PM, Architect, Engineer, plus task-type-specific extended personas like AI QA). Each runs independently with isolated context. Findings get consolidated through a Finding Log with disposition tags (Incorporated / Critical / Rejected / Escalated / BLOCKED). Synthesis is single-voice but driven by the spawned subagents' returns — never inline simulation.
+
+The Phase 3 spawn-audit hook enforces this: if you declare personas on line 2 of a Tier 3+ response but don't actually spawn them via `Agent()` tool calls, the hook returns exit 2 and your next turn starts with a system reminder showing the violation.
+
+### Plan Mode Standards
+Plan-mode plans must contain 8 mandatory sections in order: Context, Clarifying Questions Surfaced, Findings/Root Causes, Fixes, Prior Attempt Analysis, Pass 1 (Justification Strength), Pass 2 (Coverage Completeness), Review Gate. Before `ExitPlanMode`, the orchestrator must spawn reviewer personas via `Agent()` — independent review per Standard 7.
+
+## Known gaps
+
+- **Tier 2 + persona-task-type bypass** — The hook is silent for `[Tier: Standard]`. CLAUDE.md L352 says persona-task types at Tier 2 should still fire the architecture, but the hook doesn't currently detect this from the user's prompt. Declaring `[Tier: Analytical]` explicitly is the workaround.
+- **Property (2) — spawn results actually used in synthesis** — The hook checks spawn *count*, not whether the spawned subagents' findings actually drove the response. Citation-based enforcement was attempted and failed Standard 7 review (see commit history for the design iteration if curious).
+- **Hook is user-writable** — Any process with write access to `~/.claude/phase3-spawn-audit.py` can disable enforcement by overwriting it with `sys.exit(0)`. No integrity check ships.
+
+## Updating
+
+```bash
+cd ~/claude-customizations
+git pull
+# Symlinks pick up changes automatically.
+# If you installed with --copy, re-run ./install.sh
+```
+
+If `CLAUDE.md` itself changes substantially, Claude Code picks up the new version at the next session start (it's loaded fresh each session).
+
+## Customizing
+
+The shipped `CLAUDE.md` is generic. To add team-specific or personal rules:
+
+- **Personal:** edit `~/.claude/CLAUDE.md` directly (if you installed with `--copy`) or maintain a local override (if symlinked — you can replace the symlink with your own file).
+- **Project-specific:** add a `CLAUDE.md` in your project repo. Claude Code loads project-level CLAUDE.md in addition to global.
+
+## License
+
+MIT.
+
+## Acknowledgments
+
+This config was iterated through a deep design session that audited adherence to the persona architecture over 14 days of session JSONL data. The Stop hook was chosen over rules-only enforcement after rules-only attempts repeatedly failed independent reviewer scrutiny — deterministic shell execution escapes the honor-system trap that LLM-judges-itself rules can't.

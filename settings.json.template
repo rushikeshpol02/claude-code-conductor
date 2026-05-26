@@ -1,0 +1,25 @@
+{
+  "_comment": "Sanitized template. Copy to ~/.claude/settings.json and fill in placeholders. See README.md for setup instructions.",
+  "env": {
+    "_comment_langfuse": "Optional Langfuse telemetry. If you don't use Langfuse, delete this entire env block.",
+    "TRACE_TO_LANGFUSE": "true",
+    "LANGFUSE_PUBLIC_KEY": "<your-langfuse-public-key>",
+    "LANGFUSE_SECRET_KEY": "<your-langfuse-secret-key>",
+    "LANGFUSE_HOST": "https://us.cloud.langfuse.com",
+    "LANGFUSE_USER_ID": "<your-username>"
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "_comment": "Phase 3 spawn-audit hook. Required for persona architecture enforcement (property 1).",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/bin/python3 ~/.claude/phase3-spawn-audit.py"
+          }
+        ]
+      }
+    ]
+  },
+  "_comment_other": "Add your own permissions, effortLevel, and other settings as needed. See https://docs.claude.com/claude-code for the full settings reference."
+}

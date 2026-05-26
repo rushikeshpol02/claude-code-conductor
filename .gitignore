@@ -1,0 +1,18 @@
+# macOS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# Backups created by install.sh
+.backup-*/
+
+# Local settings (NEVER commit — contains API keys)
+settings.json
+settings.local.json
+
+# Local memory (workspace-specific; only the template is committed)
+memory/*.md
+!memory/MEMORY.md.template

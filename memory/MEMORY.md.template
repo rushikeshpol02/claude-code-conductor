@@ -1,0 +1,15 @@
+# Memory Index
+
+<!--
+This file is the auto-memory index for this workspace. Each entry below is a one-line
+pointer to a memory file in this directory. See the "auto memory" section in CLAUDE.md
+for the four memory types (user, feedback, project, reference) and when to write each.
+
+When you write a new memory:
+1. Save the file at memory/<type>_<short-kebab-case-slug>.md with YAML frontmatter
+   (see CLAUDE.md "How to save memories")
+2. Add a single line below: - [Title](filename.md) — one-line hook
+3. Keep entries under 150 characters each; first 200 lines of this file are auto-loaded
+
+This template is empty intentionally. Memories accumulate as you work.
+-->
