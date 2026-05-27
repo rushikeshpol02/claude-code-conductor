@@ -11,7 +11,8 @@ Shared Claude Code customizations for the team. Drop-in upgrades to `~/.claude/`
 | `hooks/phase3-spawn-audit.py` | Stop hook that enforces persona spawn fidelity. Blocks turns where Tier 3+ was declared but the team wasn't actually spawned. |
 | `settings.json.template` | Sanitized settings.json template. Wire the hook in here (see setup). |
 | `memory/MEMORY.md.template` | Empty memory index template. Memories accumulate per-workspace as you use Claude Code. |
-| `install.sh` | One-command setup. Symlinks (default) or copies files into `~/.claude/`. |
+| `install.sh` | One-command setup. Symlinks (default) or copies files into `~/.claude/`. Supports `--dry-run`, `--force`, and writes merge notes when existing files differ. |
+| `uninstall.sh` | Reverses `install.sh`. Only removes files this repo owns (symlinks back to here, or copies with matching content). Offers to restore from the most recent backup. |
 | `docs/*.md` | Plain-English explainers for each customization system (Effort Routing, Persona Architecture, Plan Mode Standards, Memory Discipline). Read `docs/README.md` first for the connection map. |
 
 ## What's NOT in here (and why)
@@ -25,12 +26,81 @@ Shared Claude Code customizations for the team. Drop-in upgrades to `~/.claude/`
 ```bash
 git clone <repo-url> ~/claude-customizations
 cd ~/claude-customizations
-./install.sh
+./install.sh --dry-run    # see exactly what will change first
+./install.sh              # actually install (default: merge mode)
 ```
 
-This symlinks `CLAUDE.md`, all `personas/*.md`, and `phase3-spawn-audit.py` into `~/.claude/`. Existing files are backed up to `~/.claude/.backup-<timestamp>/` first.
+By default, install.sh runs in **merge mode** — it appends our content into your existing `CLAUDE.md` wrapped in managed-section markers. Your personal rules stay untouched. Persona files and the Stop hook are symlinked separately.
 
-Use `./install.sh --copy` if you want independent copies instead of symlinks (no auto-updates via `git pull`).
+### Install modes
+
+Pick ONE (default is `--merge`):
+
+| Mode | What it does to your CLAUDE.md | Auto-updates? |
+|---|---|---|
+| **`--merge`** (default) | Appends our content inside `<!-- BEGIN claude-customizations managed section -->` ... `<!-- END ... -->` markers. Idempotent: re-runs replace the content between markers in place. Your content above/below stays. | No — re-run install.sh after `git pull` |
+| `--symlink` | Replaces your `CLAUDE.md` with a symlink to the repo's version. Your existing content is backed up but NOT merged. | Yes (via `git pull`) |
+| `--copy` | Copies the repo's `CLAUDE.md` over yours. Snapshot at install time. | No — re-run install.sh |
+
+### Helper flags
+
+| Flag | Purpose |
+|---|---|
+| `--dry-run` | Show what would happen. Make no changes. **Run this first.** |
+| `--force` | Proceed even if your existing `CLAUDE.md` differs (only applies in `--symlink`/`--copy` modes). |
+
+### How merge mode handles your CLAUDE.md
+
+| Your starting state | Merge-mode behavior |
+|---|---|
+| No `~/.claude/CLAUDE.md` exists | Creates the file with our content wrapped in markers |
+| `CLAUDE.md` exists, no markers | **Appends** our marked section to the bottom; your content stays untouched at the top |
+| `CLAUDE.md` exists with our markers | **Replaces** content between the markers with the latest repo version; everything outside the markers stays |
+
+This is the recommended mode for first-time users. You can run `./install.sh` after every `git pull` and your personal content is never at risk.
+
+### How persona files and the Stop hook are handled (all modes)
+
+Personas and the hook script use **skip-and-warn** behavior across all install modes:
+
+- **File doesn't exist** → install ours
+- **File is a symlink into our repo (from a prior install)** → refresh
+- **File content matches ours** → refresh (no-op)
+- **File content differs** → **skip with warning**; your version preserved. Re-run after removing your version if you want ours.
+
+This protects any local customizations you've made to specific persona files. If you want to wholesale replace them, run `./uninstall.sh` first (or remove the specific files), then re-install.
+
+## Uninstalling
+
+```bash
+cd ~/claude-customizations
+./uninstall.sh --dry-run    # preview what would be removed
+./uninstall.sh              # actually uninstall
+```
+
+Behavior matches the install mode:
+
+- **Merge-installed `CLAUDE.md`**: strips the content between our markers, leaving your personal content intact. If only our content was in the file, the file is removed entirely.
+- **Symlink-installed `CLAUDE.md`**: removes the symlink.
+- **Copy-installed `CLAUDE.md`**: removes the copy if its content matches the repo's. Skips if you've locally modified it.
+
+For personas and the hook: same logic — only files that trace back to this repo are removed.
+
+**Manual step still required:** remove the Stop hook entry from `~/.claude/settings.json` (look for `phase3-spawn-audit.py` in the `Stop` hooks array).
+
+## Uninstalling
+
+```bash
+cd ~/claude-customizations
+./uninstall.sh --dry-run    # preview what would be removed
+./uninstall.sh              # actually uninstall
+```
+
+This only removes files this repo owns (symlinks back to here, or `--copy` installs with content matching the repo). It will **skip** any file that was locally modified — your customizations stay safe.
+
+After file removal, you'll be offered to restore from the most recent `~/.claude/.backup-<timestamp>/` folder.
+
+**Manual step still required:** remove the Stop hook entry from your `~/.claude/settings.json` (look for `phase3-spawn-audit.py` in the `Stop` hooks array).
 
 ## Settings.json setup (manual — has secrets)
 
