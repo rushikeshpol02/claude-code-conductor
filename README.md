@@ -12,6 +12,7 @@ Shared Claude Code customizations for the team. Drop-in upgrades to `~/.claude/`
 | `settings.json.template` | Sanitized settings.json template. Wire the hook in here (see setup). |
 | `memory/MEMORY.md.template` | Empty memory index template. Memories accumulate per-workspace as you use Claude Code. |
 | `install.sh` | One-command setup. Symlinks (default) or copies files into `~/.claude/`. |
+| `docs/*.md` | Plain-English explainers for each customization system (Effort Routing, Persona Architecture, Plan Mode Standards, Memory Discipline). Read `docs/README.md` first for the connection map. |
 
 ## What's NOT in here (and why)
 
