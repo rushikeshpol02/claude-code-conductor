@@ -109,6 +109,20 @@ Every finding from every subagent must be classified. No silent rejections.
 
 When an extended persona is spawned, its prompt template requires it to **quote its Canary value verbatim** from its persona file before any analysis. The canary is a unique string per persona file (e.g., `myconnect-red-teamer-v1`) that proves the subagent actually read the file rather than reproducing from training memory. If the canary is missing on first spawn, the orchestrator re-spawns once with explicit "use your Read tool" instructions. If still missing, mark BLOCKED.
 
+### Deterministic enforcement — the Stop hook
+
+The biggest reliability risk in this architecture is Phase 3 atomic spawn: declaring personas on line 2 of the response but skipping the actual `Agent()` calls and falling back to inline single-voice analysis. A 14-day audit found this happening on **66% of Tier 3+ turns** — the spec was intact, but execution wasn't.
+
+Rules-only enforcement in CLAUDE.md couldn't fix this: *the LLM that would violate is the same LLM that would judge it didn't.* So a small Stop hook runs **outside** the LLM after every assistant turn — script at `~/.claude/phase3-spawn-audit.py`, wired into `settings.json` as the third Stop-hook entry.
+
+What it checks (deterministically, via shell):
+- If line 1 declares `[Tier: Analytical|Deep]`, line 2 must contain `Personas: <names>`
+- `Agent()` tool-call count in the turn must be ≥ declared persona count
+
+On violation: exits 2, structured error message becomes a system reminder in the next turn. The model can't rationalize past `grep` and `re.match` — that's the point. **Catches the dominant failure mode (no spawn at all) but does NOT verify that spawned subagents' findings actually drove the synthesis** — that's the documented Property (2) gap below. Citation-based fidelity checks were attempted and failed independent review across two design iterations.
+
+The hook is the only deterministic enforcement layer in the architecture. Every other rule is probabilistic.
+
 ## High-Level User Flow
 
 ```
@@ -225,9 +239,9 @@ Single voice    Architecture fires
 ## What this connects to
 
 - **[effort-routing.md](./effort-routing.md)** — the Tier framework decides *when* this architecture fires. Tier 3+ is the trigger.
-- **Plan Mode Standards** *(coming)* — applies the persona architecture to plan-time work. Standard 7 requires a pre-ExitPlanMode reviewer spawn.
-- **Stop Hook** *(coming)* — `~/.claude/phase3-spawn-audit.py` deterministically enforces that Tier 3+ declarations actually spawn the team. Catches "declared but didn't spawn" silently failing.
-- **Memory Discipline** *(coming)* — feedback memories often record persona-related corrections (e.g., "user prefers Architect-lead on infrastructure tasks").
+- **[plan-mode-standards.md](./plan-mode-standards.md)** — applies the persona architecture to plan-time work. Standard 7 requires a pre-ExitPlanMode reviewer spawn.
+- **The Stop hook** — covered in the *Deterministic enforcement* section above. Lives at `~/.claude/phase3-spawn-audit.py`; backstops Phase 3 atomic spawn.
+- **[memory-discipline.md](./memory-discipline.md)** — feedback memories often record persona-related corrections (e.g., "user prefers Architect-lead on infrastructure tasks").
 
 ## Honest Limits
 

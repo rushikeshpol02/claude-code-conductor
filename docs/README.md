@@ -13,7 +13,7 @@ These docs are for **humans** (you, teammates, future-you). `CLAUDE.md` itself i
 | 3 | **Plan Mode Standards** | L86–182 | [plan-mode-standards.md](./plan-mode-standards.md) ✅ |
 | 4 | **AI Team (Persona Architecture)** | L184–557 | [persona-architecture.md](./persona-architecture.md) ✅ |
 | 5 | **Memory Discipline** | L559–573 | [memory-discipline.md](./memory-discipline.md) ✅ |
-| — | **Phase 3 Spawn-Audit Hook** (deterministic backstop) | `~/.claude/phase3-spawn-audit.py` + `settings.json` Stop array | *(coming)* |
+| — | **Phase 3 Spawn-Audit Hook** (deterministic backstop) | `~/.claude/phase3-spawn-audit.py` + `settings.json` Stop array | Covered inline in [persona-architecture.md § Deterministic enforcement](./persona-architecture.md) and [plan-mode-standards.md § Standard 7](./plan-mode-standards.md). The hook is enforcement infrastructure, not its own conceptual system — no standalone doc. |
 
 ## How These Systems Connect
 
@@ -108,10 +108,9 @@ If you're new to this setup, read in this order:
 
 1. **effort-routing.md** — the entry point. Sets up the tier mental model.
 2. **plan-mode-standards.md** — the simpler structured-work pattern.
-3. **persona-architecture.md** — the biggest piece. Builds on Tier + Plan Mode.
+3. **persona-architecture.md** — the biggest piece. Builds on Tier + Plan Mode. Includes the Stop hook explainer at the bottom.
 4. **interaction-rules.md** — small piece. Mostly about AskUserQuestion timing.
 5. **memory-discipline.md** — separate concern. Session-boundary mechanics.
-6. **stop-hook.md** — the enforcement layer. Read last because it's about backstopping the rest.
 
 ## Source of truth
 

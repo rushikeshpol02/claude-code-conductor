@@ -77,6 +77,8 @@ This is the one that closes the "I judge my own plan" trap. Before `ExitPlanMode
 
 Calling ExitPlanMode without a documented reviewer spawn = architecture violation. Self-declaring "reviewed inline" doesn't satisfy this requirement.
 
+**Deterministic enforcement.** The Stop hook that backstops the persona architecture (`~/.claude/phase3-spawn-audit.py`) also catches this case. If you call `ExitPlanMode` after declaring `Personas:` on line 2 but without the matching `Agent()` calls in the same turn, the next turn starts with a violation reminder. The hook runs outside the LLM's response generation, so it can't be self-rationalized past. See *Deterministic enforcement — the Stop hook* in [persona-architecture.md](./persona-architecture.md) for the full picture.
+
 ## High-Level User Flow
 
 ```
@@ -204,7 +206,7 @@ Findings count: 6 (4 incorporated, 1 rejected with reason, 1 escalated)
 
 - **[effort-routing.md](./effort-routing.md)** — Plan Mode inherits the tier of the work being planned. Tier 3 → Analytical plan with reviewer spawn. Tier 4 → Deep plan with the full team.
 - **[persona-architecture.md](./persona-architecture.md)** — Standard 7's reviewer spawn IS the persona architecture applied to plan-time work. Same Agent() spawn pattern, same Task Type → reviewer mapping.
-- **Stop Hook** *(coming)* — `~/.claude/phase3-spawn-audit.py` enforces that the reviewer spawn actually happens. If you call ExitPlanMode without `Agent()` calls in the same turn, the next turn starts with a violation reminder.
+- **The Stop hook** — `~/.claude/phase3-spawn-audit.py` deterministically enforces that the Standard 7 reviewer spawn actually happens. Covered in Standard 7 above and in detail in [persona-architecture.md § Deterministic enforcement](./persona-architecture.md).
 - **Post-plan execution rule** (CLAUDE.md L350) — when the user approves a plan with "execute" / "proceed", execution treats itself as a new task at the same tier. Re-invokes the persona architecture for implementation review.
 
 ## Honest Limits
