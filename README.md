@@ -1,6 +1,8 @@
 # claude-code-conductor
 
-Drop-in upgrades to `~/.claude/` that turn Claude Code into an orchestrator of multiple AI personas. Adds tier-based effort routing, a multi-persona team architecture (PM, Architect, Engineer + extended specialists), structured plan-mode standards, and a deterministic Stop hook that catches architecture violations. Designed for teams sharing a consistent Claude Code setup.
+Drop-in upgrades to `~/.claude/` that turn Claude Code into an orchestrator of multiple AI personas. Adds tier-based effort routing, a multi-persona team architecture (PM, Architect, Engineer + extended specialists), structured plan-mode standards, and a deterministic Stop hook that catches architecture violations.
+
+**Requires:** bash 4+, Python 3.8+. Tested on macOS; should work on Linux with standard `python3`.
 
 ## What's in here
 
@@ -118,7 +120,7 @@ For personas and the hook: same logic — only files that trace back to this rep
 After `install.sh` runs, wire the Stop hook into your `~/.claude/settings.json`:
 
 1. If you have **no** existing `settings.json`: copy `settings.json.template` to `~/.claude/settings.json` and fill in any placeholders (or delete the `env` block if you don't use Langfuse).
-2. If you **already have** a `settings.json`: add this entry to your existing `hooks.Stop` array:
+2. If you **already have** a `settings.json`: add this object as a new element of your existing `hooks.Stop` array (alongside any existing hook entries — not replacing them):
 
    ```json
    {
@@ -131,7 +133,11 @@ After `install.sh` runs, wire the Stop hook into your `~/.claude/settings.json`:
    }
    ```
 
-3. Restart Claude Code (or start a new session) — hooks load at session start.
+   See `settings.json.template` in this repo for the full surrounding structure if you're unsure where this goes.
+
+   **Note on Python path:** `/usr/bin/python3` ships by default on macOS. If you're on a Linux distro that doesn't have it there (some minimal distros), run `which python3` and replace the path in the command above with what you get.
+
+3. Quit Claude Code completely (close all sessions) and start a new one — hooks load at session start.
 
 ## Verifying the hook fires
 
