@@ -1,150 +1,99 @@
 # claude-code-conductor
 
-Drop-in upgrades to `~/.claude/` that turn Claude Code into an orchestrator of multiple AI personas. Adds tier-based effort routing, a multi-persona team architecture (PM, Architect, Engineer + extended specialists), structured plan-mode standards, and a deterministic Stop hook that catches architecture violations.
+Drop-in upgrades to `~/.claude/` that turn Claude Code into an orchestrator of multiple AI personas — adding tier-based effort routing, structured plan-mode discipline, and a deterministic Stop hook the LLM can't self-rationalize past.
 
 **Requires:** bash 4+, Python 3.8+. Tested on macOS; should work on Linux with standard `python3`.
 
-## What's in here
+---
 
-| File / dir | Purpose |
-|---|---|
-| `CLAUDE.md` | Global Claude instructions (~575 lines). Tier framework, persona architecture, plan-mode standards, memory discipline. |
-| `personas/*.md` | 15 extended persona definitions (AI QA, Architect, Discovery Researcher, etc.) loaded as subagents during Tier 3+ tasks. |
-| `hooks/phase3-spawn-audit.py` | Stop hook that enforces persona spawn fidelity. Blocks turns where Tier 3+ was declared but the team wasn't actually spawned. |
-| `settings.json.template` | Sanitized settings.json template. Wire the hook in here (see setup). |
-| `memory/MEMORY.md.template` | Empty memory index template. Memories accumulate per-workspace as you use Claude Code. |
-| `install.sh` | One-command setup. Merges (default) or copies files into `~/.claude/`. Supports per-feature install via `--features=...`, plus `--dry-run` and `--force`. Generates merge notes when existing files differ. |
-| `uninstall.sh` | Reverses `install.sh`. Strips per-feature managed sections from `CLAUDE.md` (and removes persona files / hook that match the repo's content). Locally modified files are preserved. |
-| `docs/*.md` | Plain-English explainers for each customization system (Effort Routing, Persona Architecture, Plan Mode Standards, Memory Discipline). Read `docs/README.md` first for the connection map. |
+## Why this exists
 
-## What's NOT in here (and why)
+Claude Code's default behavior works well for simple tasks. On complex work — code reviews, architecture decisions, multi-file refactors, plan-then-execute workflows — it tends to collapse multi-perspective analysis into a confident single-voice answer.
 
-- **`settings.json`** (the real file) — contains API keys and user-specific paths. Use the template + your own credentials.
-- **Workspace memories** — `memory/*.md` is gitignored. Memories are per-workspace and personal; only the empty index template ships.
-- **`~/.claude/hooks/`** in active form — that subdirectory is root-owned on some Claude Code installs. The Stop hook script ships in `hooks/` here but is installed to `~/.claude/` root (sibling of `settings.json`).
+The failure mode is structural. When one model tries to think *"what would a PM say? what would an engineer say? what would security say?"* all in one head, it unconsciously resolves those conflicts before they surface. The disagreement mechanism that would have caught the real problem never fires.
 
-## Quick install
+A 14-day audit of one heavy user's Claude Code sessions found **66% of complex (Tier 3+) tasks ran single-voice** — the architectural disagreements that should have caught issues never showed up. This config closes that gap:
+
+- **Effort matches task complexity** (lightweight for trivia, heavy for design work)
+- **Multiple AI personas review independently** before any synthesis
+- **Plans get structured discipline** before execution
+- **A Stop hook catches** when the discipline didn't actually fire — running outside the LLM, so it can't be talked into compliance
+
+> This was iterated from one user's sessions, not yet validated across teams. Adopt accordingly.
+
+---
+
+## What it adds
+
+Six features, each independently installable. Pick a subset or take all.
+
+### 1. Tier-based effort routing
+Every response starts with `[Tier: Quick | Standard | Analytical | Deep — <reason>]`. Tier is auto-selected from intent keywords, files involved, and complexity.
+**Solves:** Claude applying the same effort to "what does X mean" and "redesign this architecture." Trivial tasks get fast direct answers; complex tasks get the full machinery.
+
+### 2. AI Team / Persona Architecture
+On Tier 3+ tasks, Claude spawns multiple persona subagents in parallel (PM, Architect, Engineer + task-specific specialists like AI QA, Discovery Researcher, Security Reviewer). Each runs independently with isolated context; findings consolidate through a structured Finding Log.
+**Solves:** single-voice convergence — when one model plays all the roles, it pre-resolves conflicts before you see them. Isolated subagents cannot silently agree with themselves.
+
+### 3. Plan Mode Standards
+Plans must contain 8 mandatory sections in order (Context, Clarifying Questions, Findings/Root Causes, Fixes, Prior Attempt Analysis, Pass 1 Justification, Pass 2 Coverage, Review Gate). Before `ExitPlanMode`, independent reviewer personas spawn for sign-off.
+**Solves:** plans built on assumptions, fix justifications that hand-wave, plans that never see an independent review before execution.
+
+### 4. Memory Discipline
+Cross-session persistence across 4 memory types (user role / corrections / project state / external references) with an end-of-session check that captures what the model learned.
+**Solves:** sessions starting cold every time, user corrections not sticking, having to re-establish context every chat.
+
+### 5. Phase 3 Spawn-Audit Stop Hook
+A ~140-line Python script wired into `~/.claude/settings.json`. Runs after every assistant turn. Checks that Tier 3+ declarations actually spawned the persona team via real `Agent()` calls — not inline single-voice simulation.
+**Solves:** rules-only enforcement that the LLM rationalizes past. The hook runs outside the model's response generation, so it can't be talked into compliance.
+
+### 6. Interaction Rules
+`AskUserQuestion` tool required for 3+ clarifying questions (not bullet lists buried in prose).
+**Solves:** model burying important decisions in text the user skims past.
+
+---
+
+## How to install
 
 ```bash
-git clone <repo-url> ~/claude-code-conductor
+git clone https://github.com/rushikeshpol02/claude-code-conductor.git ~/claude-code-conductor
 cd ~/claude-code-conductor
-./install.sh --dry-run    # see exactly what will change first
-./install.sh              # actually install (default: all features, merge mode)
+./install.sh --dry-run    # preview every change
+./install.sh              # install all features (default)
 ```
 
-By default, install.sh runs in **merge mode** with **all features** — it appends each customization system into your existing `CLAUDE.md` wrapped in per-feature managed-section markers. Your personal rules stay untouched.
-
-**install.sh only makes copies** — nothing in `~/.claude/` depends on this repo's filesystem location. You can move or delete this repo later and your config will keep working. To pick up repo updates, re-run `./install.sh` after `git pull`.
-
-### Per-feature install
-
-Each customization system can be installed independently:
-
-| Feature | What it gives you | Depends on |
-|---|---|---|
-| `tier` | Effort Routing Framework (Quick/Standard/Analytical/Deep) | — |
-| `interaction-rules` | AskUserQuestion timing | — |
-| `plan-mode` | 7 Plan Mode Standards + 8 mandatory plan-file sections | — |
-| `personas` | AI Team / Persona Architecture + 15 persona files | `tier` |
-| `memory` | Memory Discipline (cross-session learning) | — |
-| `hook` | Phase 3 Spawn-Audit Stop hook (deterministic backstop) | `personas` |
-
-Dependencies are **auto-resolved**: selecting `hook` automatically pulls in `personas` and `tier`. Selecting `personas` automatically pulls in `tier`.
+### Install a subset
 
 ```bash
-./install.sh                                # default: all features
-./install.sh --features=tier,memory          # just two features
-./install.sh --features=plan-mode            # plan-mode only
-./install.sh --features=hook                 # auto-pulls personas + tier
+./install.sh --features=tier,memory       # just two features
+./install.sh --features=plan-mode         # plan-mode only
+./install.sh --features=hook              # auto-pulls personas + tier
 ```
 
-**Set semantics:** `--features=X,Y,Z` is **authoritative**. Re-running with a different list will install new features AND remove ones that were previously installed but aren't in the new list. (Run with `--dry-run` first to preview.)
+Dependencies auto-resolve: `hook` requires `personas`, `personas` requires `tier`. Selecting one pulls in what it needs.
 
-### Install modes
+`--features=X,Y,Z` is **authoritative** — re-running with a different list installs new features AND removes ones previously installed but no longer in the list.
 
-Pick ONE (default is `--merge`):
+### Wire the Stop hook (if `hook` is installed)
 
-| Mode | What it does to your CLAUDE.md |
-|---|---|
-| **`--merge`** (default) | Each selected feature gets its own marker block. Idempotent: re-runs refresh existing sections in place; features you don't select are removed. Your personal content outside the markers stays untouched. |
-| `--copy` | Replaces your `CLAUDE.md` with the repo's full content. Requires `--features=all` (or omit `--features`). Use only if you have no personal content. |
+After `install.sh`, add this object as a new element of your `~/.claude/settings.json` `hooks.Stop` array (alongside any existing entries — not replacing them):
 
-### Helper flags
-
-| Flag | Purpose |
-|---|---|
-| `--dry-run` | Show what would happen. Make no changes. **Run this first.** |
-| `--force` | Proceed even if your existing `CLAUDE.md` differs (only applies in `--copy` mode). |
-
-### How merge mode handles your CLAUDE.md
-
-| Your starting state | Merge-mode behavior |
-|---|---|
-| No `~/.claude/CLAUDE.md` exists | Creates the file with our content wrapped in markers |
-| `CLAUDE.md` exists, no markers | **Appends** our marked section to the bottom; your content stays untouched at the top |
-| `CLAUDE.md` exists with our markers | **Replaces** content between the markers with the latest repo version; everything outside the markers stays |
-
-This is the recommended mode for first-time users. You can run `./install.sh` after every `git pull` and your personal content is never at risk.
-
-### How persona files and the Stop hook are handled (both modes)
-
-Personas and the hook script are **always installed as copies** — they live independently in `~/.claude/` and won't break if you move or delete this repo. Skip-and-warn behavior protects local customizations:
-
-- **File doesn't exist** → install a fresh copy
-- **File content matches ours** → refresh (no-op)
-- **File is a legacy symlink** (from an older install) → convert to a copy
-- **File content differs** → **skip with warning**; your version preserved. Re-run after removing your version if you want ours.
-
-If you want to wholesale replace them, run `./uninstall.sh` first (or remove the specific files), then re-install.
-
-## Uninstalling
-
-```bash
-cd ~/claude-code-conductor
-./uninstall.sh --dry-run    # preview what would be removed
-./uninstall.sh              # actually uninstall
+```json
+{
+  "hooks": [
+    {
+      "type": "command",
+      "command": "/usr/bin/python3 ~/.claude/phase3-spawn-audit.py"
+    }
+  ]
+}
 ```
 
-Behavior matches the install mode:
+See [`settings.json.template`](./settings.json.template) for the full surrounding structure. On non-macOS systems: run `which python3` and use that path. Then quit Claude Code completely and start a new session.
 
-- **Merge-installed `CLAUDE.md`**: strips the content between our markers, leaving your personal content intact. If only our content was in the file, the file is removed entirely.
-- **Copy-installed `CLAUDE.md`**: removes the copy if its content matches the repo's. Skips if you've locally modified it.
-- **Legacy symlinks** (from older installs that used `--symlink` mode): removed cleanly.
-
-For personas and the hook: same logic — only files that trace back to this repo are removed. Anything you locally modified is preserved.
-
-**Manual step still required:** remove the Stop hook entry from `~/.claude/settings.json` (look for `phase3-spawn-audit.py` in the `Stop` hooks array).
-
-## Settings.json setup (manual — has secrets)
-
-After `install.sh` runs, wire the Stop hook into your `~/.claude/settings.json`:
-
-1. If you have **no** existing `settings.json`: copy `settings.json.template` to `~/.claude/settings.json` and fill in any placeholders (or delete the `env` block if you don't use Langfuse).
-2. If you **already have** a `settings.json`: add this object as a new element of your existing `hooks.Stop` array (alongside any existing hook entries — not replacing them):
-
-   ```json
-   {
-     "hooks": [
-       {
-         "type": "command",
-         "command": "/usr/bin/python3 ~/.claude/phase3-spawn-audit.py"
-       }
-     ]
-   }
-   ```
-
-   See `settings.json.template` in this repo for the full surrounding structure if you're unsure where this goes.
-
-   **Note on Python path:** `/usr/bin/python3` ships by default on macOS. If you're on a Linux distro that doesn't have it there (some minimal distros), run `which python3` and replace the path in the command above with what you get.
-
-3. Quit Claude Code completely (close all sessions) and start a new one — hooks load at session start.
-
-## Verifying the hook fires
-
-The hook runs after every assistant turn but is silent unless a Tier 3+ task was declared without proper spawn behavior. To verify it's wired correctly:
+### Verify the hook works
 
 ```bash
-# Manually test the hook with a synthetic violation:
 cat > /tmp/test.jsonl << 'EOF'
 {"type":"user","message":{"role":"user","content":"test"}}
 {"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"[Tier: Analytical — test]\nTask: Review & Critique | Personas: PM (lead), Architect, Engineer\n\nNo spawn..."}]}}
@@ -155,50 +104,87 @@ echo "exit code: $?"
 rm /tmp/test.jsonl
 ```
 
-Expected output: a "Phase 3 spawn-audit FAILED" message and exit code `2`. If you get exit code `0`, the hook isn't catching violations — check the script path.
+Expected: a "Phase 3 spawn-audit FAILED" message + exit code `2`. If you get exit code `0`, the hook isn't catching violations — check the script path.
 
-## The frameworks at a glance
+---
 
-CLAUDE.md defines three interlocking systems:
+## Reference
 
-### Effort Routing (Tiers)
-Every response starts with `[Tier: <Quick|Standard|Analytical|Deep> — <reason>]`. Tier is set by intent keywords, file counts, complexity, and risk. Tier 3+ automatically invokes the persona architecture.
+### What's in the repo
 
-### Persona Architecture
-On Tier 3+ tasks, the orchestrator spawns multiple persona subagents in parallel (PM, Architect, Engineer, plus task-type-specific extended personas like AI QA). Each runs independently with isolated context. Findings get consolidated through a Finding Log with disposition tags (Incorporated / Critical / Rejected / Escalated / BLOCKED). Synthesis is single-voice but driven by the spawned subagents' returns — never inline simulation.
+| File / dir | Purpose |
+|---|---|
+| `CLAUDE.md` | Global Claude instructions (~575 lines). The source of truth — `install.sh` extracts sections from this file. |
+| `personas/*.md` | 15 extended persona definitions loaded as subagents during Tier 3+ tasks. |
+| `hooks/phase3-spawn-audit.py` | Stop hook script. |
+| `settings.json.template` | Sanitized template (no real API keys). |
+| `memory/MEMORY.md.template` | Empty memory index for new installs. |
+| `install.sh` / `uninstall.sh` | Setup and teardown. |
+| `docs/*.md` | Plain-English explainers for each customization system. Start with [`docs/README.md`](./docs/README.md). |
 
-The Phase 3 spawn-audit hook enforces this: if you declare personas on line 2 of a Tier 3+ response but don't actually spawn them via `Agent()` tool calls, the hook returns exit 2 and your next turn starts with a system reminder showing the violation.
+### What's NOT in the repo (and why)
 
-### Plan Mode Standards
-Plan-mode plans must contain 8 mandatory sections in order: Context, Clarifying Questions Surfaced, Findings/Root Causes, Fixes, Prior Attempt Analysis, Pass 1 (Justification Strength), Pass 2 (Coverage Completeness), Review Gate. Before `ExitPlanMode`, the orchestrator must spawn reviewer personas via `Agent()` — independent review per Standard 7.
+- **`settings.json`** (the real file) — contains API keys and user-specific paths. Use the template + your own credentials.
+- **Workspace memories** — `memory/*.md` is gitignored. Memories accumulate per-workspace and are personal.
+- **Hook at `~/.claude/hooks/`** — that subdirectory is root-owned on some Claude Code installs. The Stop hook ships in `hooks/` here but is installed to `~/.claude/` root (sibling of `settings.json`).
 
-## Known gaps
+### Install modes
 
-- **Tier 2 + persona-task-type bypass** — The hook is silent for `[Tier: Standard]`. CLAUDE.md L352 says persona-task types at Tier 2 should still fire the architecture, but the hook doesn't currently detect this from the user's prompt. Declaring `[Tier: Analytical]` explicitly is the workaround.
-- **Property (2) — spawn results actually used in synthesis** — The hook checks spawn *count*, not whether the spawned subagents' findings actually drove the response. Citation-based enforcement was attempted and failed Standard 7 review (see commit history for the design iteration if curious).
-- **Hook is user-writable** — Any process with write access to `~/.claude/phase3-spawn-audit.py` can disable enforcement by overwriting it with `sys.exit(0)`. No integrity check ships.
+| Mode | What it does to your CLAUDE.md |
+|---|---|
+| `--merge` (default) | Each selected feature gets its own marker block. Idempotent: re-runs refresh existing sections in place; features you don't select are removed. Personal content outside the markers stays untouched. |
+| `--copy` | Replaces your `CLAUDE.md` with the repo's full content. Requires `--features=all`. Use only if you have no personal content. |
 
-## Updating
+### Merge-mode behavior
+
+| Your starting state | Result |
+|---|---|
+| No `~/.claude/CLAUDE.md` | Creates it, wrapped in per-feature markers |
+| `CLAUDE.md` exists, no markers | Appends our marked sections to the bottom; your content stays untouched at the top |
+| `CLAUDE.md` exists with our markers | Replaces content between markers with the latest repo version; everything outside stays |
+
+`install.sh` only makes **copies** — nothing in `~/.claude/` depends on this repo's filesystem location. Move or delete the repo later and your config keeps working. To pick up updates: `git pull && ./install.sh`.
+
+### Personas and the hook (skip-and-warn)
+
+Persona files and the hook script use **skip-and-warn** behavior: if a target file exists with different content, your version is preserved and ours isn't installed. To wholesale replace them: remove your version (or `./uninstall.sh`), then re-install.
+
+### Uninstalling
+
+```bash
+./uninstall.sh --dry-run
+./uninstall.sh
+```
+
+Strips per-feature managed sections from `CLAUDE.md` (preserves your personal content outside markers). Removes persona files and hook that match the repo's content; locally modified files are preserved. **Manual step:** remove the Stop hook entry from `~/.claude/settings.json`.
+
+### Updating
 
 ```bash
 cd ~/claude-code-conductor
 git pull
-./install.sh         # re-run to refresh content in your CLAUDE.md
+./install.sh    # re-run to refresh your ~/.claude/
 ```
 
-If `CLAUDE.md` itself changes substantially, Claude Code picks up the new version at the next session start (it's loaded fresh each session).
+### Customizing
 
-## Customizing
+- **Personal rules:** add them OUTSIDE the managed-section markers in your `~/.claude/CLAUDE.md`. They'll survive every re-install.
+- **Project-specific:** add a `CLAUDE.md` to your project root. Claude Code loads it in addition to global.
 
-The shipped `CLAUDE.md` is generic. To add team-specific or personal rules:
+---
 
-- **Personal:** edit `~/.claude/CLAUDE.md` directly (if you installed with `--copy`) or maintain a local override (if symlinked — you can replace the symlink with your own file).
-- **Project-specific:** add a `CLAUDE.md` in your project repo. Claude Code loads project-level CLAUDE.md in addition to global.
+## Known gaps
+
+- **Tier 2 + persona-task-type bypass** — The Stop hook is silent for `[Tier: Standard]`. The architecture spec says Tier 2 + persona-task should still fire the team, but the hook doesn't detect this from the user's prompt. Workaround: declare `[Tier: Analytical]` explicitly.
+- **Spawn-fidelity (property 2)** — The hook checks that personas were *spawned*, not that their findings actually drove the response. Citation-based enforcement was attempted and failed independent review across two design iterations.
+- **Hook is user-writable** — Any process with write access to `~/.claude/phase3-spawn-audit.py` can disable enforcement by overwriting it with `sys.exit(0)`. No integrity check ships.
+
+---
 
 ## License
 
-MIT.
+MIT — see [LICENSE](./LICENSE).
 
 ## Acknowledgments
 
-This config was iterated through a deep design session that audited adherence to the persona architecture over 14 days of session JSONL data. The Stop hook was chosen over rules-only enforcement after rules-only attempts repeatedly failed independent reviewer scrutiny — deterministic shell execution escapes the honor-system trap that LLM-judges-itself rules can't.
+This config was iterated through a deep design session that audited adherence to the persona architecture over 14 days of one user's Claude Code sessions. The Stop hook was chosen over rules-only enforcement after rules-only attempts repeatedly failed independent reviewer scrutiny — deterministic shell execution escapes the honor-system trap that LLM-judges-itself rules can't.
