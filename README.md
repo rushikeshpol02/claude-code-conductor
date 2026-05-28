@@ -27,12 +27,36 @@ Shared Claude Code customizations for the team. Drop-in upgrades to `~/.claude/`
 git clone <repo-url> ~/claude-customizations
 cd ~/claude-customizations
 ./install.sh --dry-run    # see exactly what will change first
-./install.sh              # actually install (default: merge mode)
+./install.sh              # actually install (default: all features, merge mode)
 ```
 
-By default, install.sh runs in **merge mode** — it appends our content into your existing `CLAUDE.md` wrapped in managed-section markers. Your personal rules stay untouched.
+By default, install.sh runs in **merge mode** with **all features** — it appends each customization system into your existing `CLAUDE.md` wrapped in per-feature managed-section markers. Your personal rules stay untouched.
 
 **install.sh only makes copies** — nothing in `~/.claude/` depends on this repo's filesystem location. You can move or delete this repo later and your config will keep working. To pick up repo updates, re-run `./install.sh` after `git pull`.
+
+### Per-feature install
+
+Each customization system can be installed independently:
+
+| Feature | What it gives you | Depends on |
+|---|---|---|
+| `tier` | Effort Routing Framework (Quick/Standard/Analytical/Deep) | — |
+| `interaction-rules` | AskUserQuestion timing | — |
+| `plan-mode` | 7 Plan Mode Standards + 8 mandatory plan-file sections | — |
+| `personas` | AI Team / Persona Architecture + 15 persona files | `tier` |
+| `memory` | Memory Discipline (cross-session learning) | — |
+| `hook` | Phase 3 Spawn-Audit Stop hook (deterministic backstop) | `personas` |
+
+Dependencies are **auto-resolved**: selecting `hook` automatically pulls in `personas` and `tier`. Selecting `personas` automatically pulls in `tier`.
+
+```bash
+./install.sh                                # default: all features
+./install.sh --features=tier,memory          # just two features
+./install.sh --features=plan-mode            # plan-mode only
+./install.sh --features=hook                 # auto-pulls personas + tier
+```
+
+**Set semantics:** `--features=X,Y,Z` is **authoritative**. Re-running with a different list will install new features AND remove ones that were previously installed but aren't in the new list. (Run with `--dry-run` first to preview.)
 
 ### Install modes
 
@@ -40,8 +64,8 @@ Pick ONE (default is `--merge`):
 
 | Mode | What it does to your CLAUDE.md |
 |---|---|
-| **`--merge`** (default) | Appends our content inside `<!-- BEGIN claude-customizations managed section -->` ... `<!-- END ... -->` markers. Idempotent: re-runs replace the content between markers in place. Your content above/below stays. |
-| `--copy` | Copies the repo's `CLAUDE.md` over yours (after backing yours up). Use this only if you have no personal content in `CLAUDE.md`. |
+| **`--merge`** (default) | Each selected feature gets its own marker block. Idempotent: re-runs refresh existing sections in place; features you don't select are removed. Your personal content outside the markers stays untouched. |
+| `--copy` | Replaces your `CLAUDE.md` with the repo's full content. Requires `--features=all` (or omit `--features`). Use only if you have no personal content. |
 
 ### Helper flags
 

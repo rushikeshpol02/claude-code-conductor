@@ -6,27 +6,33 @@
 # repo's filesystem location, so moving or deleting the repo will not
 # break your config. To pick up repo updates, re-run install.sh.
 #
+# Features (each installable independently):
+#   tier               Effort Routing Framework (Quick/Standard/Analytical/Deep)
+#   interaction-rules  AskUserQuestion timing
+#   plan-mode          Plan Mode Standards (7 standards + 8 mandatory sections)
+#   personas           AI Team / Persona Architecture (CLAUDE.md section + 15 persona files)
+#   memory             Memory Discipline (cross-session learning)
+#   hook               Phase 3 spawn-audit Stop hook (deterministic backstop)
+#
+# Dependencies (auto-resolved):
+#   personas → tier
+#   hook     → personas → tier
+#
 # Modes (choose ONE; default is --merge):
-#   --merge      Append our CLAUDE.md content into your existing one,
-#                wrapped in managed-section markers. Idempotent: re-runs
-#                replace the content between markers in place. Your own
-#                rules above/below the markers are preserved forever.
+#   --merge      Append selected features into your existing CLAUDE.md,
+#                each wrapped in per-feature markers. Idempotent: re-runs
+#                refresh existing sections in place. Sections you don't
+#                select get removed from your file.
 #
-#   --copy       Copy the repo's CLAUDE.md over yours (snapshot at install
-#                time). Re-run install.sh to update. Your existing CLAUDE.md
-#                is backed up but NOT merged.
-#
-# Behavior across both modes:
-#   - Persona files and the Stop hook are always installed as copies
-#     (not symlinks). Re-run install.sh after 'git pull' to refresh them.
-#   - Persona files / hook: skip-and-warn if you have a file with the
-#     same name and different content. Your version is preserved.
-#   - Existing files we replace get backed up to ~/.claude/.backup-<timestamp>/
-#   - A MERGE_NOTES.md is generated in the backup folder when content differs.
+#   --copy       Replace your CLAUDE.md with the repo's full content.
+#                Incompatible with partial --features selection (the whole
+#                file is overwritten). Use --merge if you want subset control.
 #
 # Helper flags:
-#   --dry-run   Show what would happen, make no changes.
-#   --force     Suppress halt-on-diff in --copy mode.
+#   --features=LIST   Comma-separated feature list. Default = all.
+#                     Example: --features=tier,memory
+#   --dry-run         Show what would happen. Make no changes.
+#   --force           Suppress halt-on-diff in --copy mode.
 
 set -euo pipefail
 
@@ -36,55 +42,176 @@ TARGET_DIR="${CLAUDE_HOME:-$HOME/.claude}"
 MODE="merge"   # default
 DRY_RUN=0
 FORCE=0
+FEATURES_ARG=""   # filled by --features=...
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 BACKUP_DIR="$TARGET_DIR/.backup-$TIMESTAMP"
 
-# Markers for --merge mode. HTML comments are invisible in rendered markdown
-# but unambiguous to grep.
-BEGIN_MARKER="<!-- BEGIN claude-customizations managed section -->"
-END_MARKER="<!-- END claude-customizations managed section -->"
+# Canonical feature order (controls section ordering in CLAUDE.md).
+# 'hook' isn't a CLAUDE.md section; it's listed last as a marker-only entry.
+ALL_FEATURES="tier interaction-rules plan-mode personas memory hook"
+
+# Legacy single-marker (from pre-2026-05-28 installs). Migrated to per-feature markers.
+LEGACY_BEGIN_MARKER="<!-- BEGIN claude-customizations managed section -->"
+LEGACY_END_MARKER="<!-- END claude-customizations managed section -->"
+
+# --- feature config (bash 3+ compatible via case statements) ---
+
+# Returns the `## ...` section header for a feature, or empty if the feature
+# has no CLAUDE.md content (e.g., 'hook' is script-only).
+feature_section() {
+  case "$1" in
+    tier)              echo "## Effort Routing Framework" ;;
+    interaction-rules) echo "## Interaction Rules" ;;
+    plan-mode)         echo "## Plan Mode Standards" ;;
+    personas)          echo "## AI Team" ;;
+    memory)            echo "## Memory Discipline" ;;
+    *)                 echo "" ;;
+  esac
+}
+
+# Returns the single dependency for a feature (or empty if none).
+feature_dep() {
+  case "$1" in
+    personas) echo "tier" ;;
+    hook)     echo "personas" ;;
+    *)        echo "" ;;
+  esac
+}
+
+# Returns a human-readable label for messages.
+feature_label() {
+  case "$1" in
+    tier)              echo "Effort Routing Framework" ;;
+    interaction-rules) echo "Interaction Rules" ;;
+    plan-mode)         echo "Plan Mode Standards" ;;
+    personas)          echo "AI Team / Persona Architecture" ;;
+    memory)            echo "Memory Discipline" ;;
+    hook)              echo "Phase 3 Spawn-Audit Hook" ;;
+    *)                 echo "$1" ;;
+  esac
+}
+
+# Returns 0 if needle appears in a space-separated haystack.
+contains_feature() {
+  local needle="$1"
+  local haystack=" $2 "
+  [[ "$haystack" == *" $needle "* ]]
+}
+
+# Resolves a comma-separated feature request into a space-separated list
+# that includes all transitive dependencies, ordered by ALL_FEATURES.
+resolve_features() {
+  local requested="$1"
+  requested="${requested//,/ }"
+  # special-case "all"
+  if [[ "$requested" == "all" ]]; then
+    echo "$ALL_FEATURES"
+    return
+  fi
+  # Validate names + collect into resolved set
+  local resolved=""
+  for f in $requested; do
+    if [[ -z "$(feature_label "$f")" ]] || ! contains_feature "$f" "$ALL_FEATURES"; then
+      echo "ERROR: unknown feature: '$f'. Valid: $ALL_FEATURES" >&2
+      exit 1
+    fi
+    contains_feature "$f" "$resolved" || resolved="$resolved $f"
+  done
+  # Pull in deps until stable
+  local changed=1
+  while [[ "$changed" == "1" ]]; do
+    changed=0
+    for f in $resolved; do
+      local dep
+      dep="$(feature_dep "$f")"
+      if [[ -n "$dep" ]] && ! contains_feature "$dep" "$resolved"; then
+        resolved="$resolved $dep"
+        changed=1
+      fi
+    done
+  done
+  # Re-order to canonical ALL_FEATURES order
+  local ordered=""
+  for f in $ALL_FEATURES; do
+    if contains_feature "$f" "$resolved"; then
+      ordered="$ordered $f"
+    fi
+  done
+  echo "${ordered# }"
+}
 
 # --- args ---
 for arg in "$@"; do
   case "$arg" in
-    --merge)   MODE="merge" ;;
-    --copy)    MODE="copy" ;;
-    --dry-run) DRY_RUN=1 ;;
-    --force)   FORCE=1 ;;
+    --merge)         MODE="merge" ;;
+    --copy)          MODE="copy" ;;
+    --features=*)    FEATURES_ARG="${arg#--features=}" ;;
+    --dry-run)       DRY_RUN=1 ;;
+    --force)         FORCE=1 ;;
     --help|-h)
       cat <<EOF
-Usage: install.sh [--merge|--copy] [--dry-run] [--force]
+Usage: install.sh [--merge|--copy] [--features=LIST] [--dry-run] [--force]
 
 This script only makes copies. Nothing in ~/.claude/ depends on the
 repo's filesystem location. Re-run install.sh after 'git pull' to update.
 
-  --merge      (DEFAULT) Append our CLAUDE.md content into your existing
-               one inside managed-section markers. Idempotent on re-run.
-               Your personal rules above/below the markers are preserved.
+Features (auto-resolves dependencies):
+  tier               Effort Routing Framework
+  interaction-rules  AskUserQuestion timing
+  plan-mode          Plan Mode Standards
+  personas           AI Team / Persona Architecture (needs: tier)
+  memory             Memory Discipline
+  hook               Phase 3 Spawn-Audit Hook (needs: personas, tier)
 
-  --copy       Copy the repo's CLAUDE.md over yours. Snapshot at install
-               time. Existing CLAUDE.md content backed up. Use this only
-               if you have no personal content to preserve.
+  --features=LIST    Comma-separated. Default: all
+                     Examples:
+                       --features=tier,memory
+                       --features=plan-mode
+                       --features=hook        (auto-pulls personas + tier)
 
+Modes:
+  --merge      (DEFAULT) Per-feature install. Each selected feature gets
+               its own marker block in your CLAUDE.md. Features you DON'T
+               select are removed from your file (idempotent set-management).
+               Your personal content outside the markers is preserved.
+
+  --copy       Replace your CLAUDE.md with the repo's full content.
+               Requires --features=all (or omit --features). Existing
+               CLAUDE.md is backed up.
+
+Helper flags:
   --dry-run    Show what would happen. Make no changes. Always safe.
-  --force      In --copy mode only: proceed even if your existing
-               CLAUDE.md differs substantially from the repo's.
+  --force      In --copy mode only: proceed even if existing CLAUDE.md
+               differs from the repo's.
 
-Across both modes:
-  - Persona files and the Stop hook are always installed as copies.
-  - Skip-and-warn: if a persona file or the hook already exists with
-    different content, your version is preserved and ours is not
-    installed for that file.
-  - Replaced files go to ~/.claude/.backup-<timestamp>/ with a
-    MERGE_NOTES.md guide when content differs.
+Persona files / hook script:
+  - 'personas' feature installs 15 persona files into ~/.claude/personas/.
+  - 'hook' feature installs ~/.claude/phase3-spawn-audit.py.
+  - Skip-and-warn: if a target file exists with different content, your
+    version is preserved.
 
-settings.json is NOT installed — see README.md for manual steps (it
-contains API keys and user-specific paths).
+Replaced files go to ~/.claude/.backup-<timestamp>/ with a MERGE_NOTES.md.
+
+settings.json is NOT installed — see README.md.
 EOF
       exit 0 ;;
     *) echo "Unknown arg: $arg (try --help)" >&2; exit 1 ;;
   esac
 done
+
+# Resolve features (default = all)
+if [[ -z "$FEATURES_ARG" ]]; then
+  FEATURES="$ALL_FEATURES"
+else
+  FEATURES="$(resolve_features "$FEATURES_ARG")"
+fi
+
+# --copy + partial features is incompatible
+if [[ "$MODE" == "copy" && "$FEATURES" != "$ALL_FEATURES" ]]; then
+  echo "ERROR: --copy mode requires all features (it overwrites the whole CLAUDE.md)." >&2
+  echo "       Either drop --copy (use default --merge) or omit --features." >&2
+  exit 1
+fi
 
 # --- guard ---
 if [[ ! -d "$REPO_DIR/personas" ]] || [[ ! -f "$REPO_DIR/CLAUDE.md" ]]; then
@@ -96,7 +223,6 @@ fi
 # --- helpers ---
 say() { echo "$@"; }
 
-# Returns 0 if a symlink points into our repo; 1 otherwise.
 symlinks_into_repo() {
   local target="$1"
   if [[ -L "$target" ]]; then
@@ -108,7 +234,6 @@ symlinks_into_repo() {
   return 1
 }
 
-# Generic file-replace install for symlink/copy modes. Used for personas + hook.
 backup_path_for() {
   local target="$1"
   local rel="${target#$TARGET_DIR/}"
@@ -131,23 +256,19 @@ backup_if_exists() {
   fi
 }
 
-# Used for persona files and hook script (skip-and-warn; always copies).
 install_with_skip_warn() {
   local src="$1"
   local dst="$2"
-  # File doesn't exist → install fresh copy
   if [[ ! -e "$dst" && ! -L "$dst" ]]; then
     if [[ "$DRY_RUN" == "1" ]]; then
       say "  [dry-run] would copy: $src -> $dst"
     else
       mkdir -p "$(dirname "$dst")"
       cp "$src" "$dst"
-      say "  copied:    $src -> $dst"
+      say "  copied:    $dst"
     fi
     return
   fi
-  # Legacy: symlink into our repo from a prior install (pre-2026-05-28 version)
-  # → replace with a copy so the user no longer depends on repo location
   if symlinks_into_repo "$dst"; then
     if [[ "$DRY_RUN" == "1" ]]; then
       say "  [dry-run] would convert legacy symlink to copy: $dst"
@@ -158,7 +279,6 @@ install_with_skip_warn() {
     fi
     return
   fi
-  # Plain file with matching content → safe to refresh
   if [[ -f "$dst" ]] && diff -q "$dst" "$src" >/dev/null 2>&1; then
     if [[ "$DRY_RUN" == "1" ]]; then
       say "  [dry-run] would refresh (content matches): $dst"
@@ -169,29 +289,77 @@ install_with_skip_warn() {
     fi
     return
   fi
-  # Plain file with different content → SKIP-AND-WARN
   say "  ⚠️  skipped (yours differs from ours): $dst"
   say "      Your version preserved. To use ours, remove yours and re-run."
 }
 
-# --- install CLAUDE.md per mode ---
+# --- feature section management ---
 
-install_claude_md_merge() {
+feature_begin_marker() { echo "<!-- BEGIN claude-customizations:$1 -->"; }
+feature_end_marker()   { echo "<!-- END claude-customizations:$1 -->"; }
+
+# Extract a feature's section content from the repo's CLAUDE.md
+extract_feature_content() {
+  local feature="$1"
+  local hdr
+  hdr="$(feature_section "$feature")"
+  [[ -z "$hdr" ]] && return
+  awk -v hdr="$hdr" '
+    BEGIN { in_section = 0 }
+    $0 == hdr { in_section = 1; print; next }
+    /^## [^#]/ && $0 != hdr { in_section = 0 }
+    in_section { print }
+  ' "$REPO_DIR/CLAUDE.md"
+}
+
+# Migrate legacy single-marker install to per-feature markers.
+# Strips the legacy section; per-feature install will re-add as separate sections.
+migrate_legacy_markers() {
   local target="$TARGET_DIR/CLAUDE.md"
-  local our_source="$REPO_DIR/CLAUDE.md"
+  [[ ! -f "$target" ]] && return
+  if ! grep -qF "$LEGACY_BEGIN_MARKER" "$target" 2>/dev/null; then return; fi
+  if [[ "$DRY_RUN" == "1" ]]; then
+    say "  [dry-run] would migrate legacy single-marker install to per-feature markers"
+    return
+  fi
+  local tmp
+  tmp="$(mktemp)"
+  awk -v begin="$LEGACY_BEGIN_MARKER" -v end="$LEGACY_END_MARKER" '
+    BEGIN { in_section = 0 }
+    $0 == begin { in_section = 1; next }
+    $0 == end   { in_section = 0; next }
+    in_section == 0 { print }
+  ' "$target" > "$tmp"
+  mv "$tmp" "$target"
+  say "  migrated: stripped legacy single managed section (will be replaced by per-feature sections)"
+}
 
-  # If our markers already exist in the target → in-place replace
-  if [[ -f "$target" ]] && grep -qF "$BEGIN_MARKER" "$target" 2>/dev/null; then
+# Install/refresh a single feature's section in target CLAUDE.md
+install_feature_section() {
+  local feature="$1"
+  local target="$TARGET_DIR/CLAUDE.md"
+  local begin end
+  begin="$(feature_begin_marker "$feature")"
+  end="$(feature_end_marker "$feature")"
+
+  local content_file
+  content_file="$(mktemp)"
+  extract_feature_content "$feature" > "$content_file"
+
+  if [[ ! -s "$content_file" ]]; then
+    rm -f "$content_file"
+    return  # no CLAUDE.md content for this feature (e.g., 'hook')
+  fi
+
+  if [[ -f "$target" ]] && grep -qF "$begin" "$target" 2>/dev/null; then
     if [[ "$DRY_RUN" == "1" ]]; then
-      say "  [dry-run] would update managed section in: $target"
-      say "             (markers already present — replacing content between them)"
+      say "  [dry-run] would refresh section: $feature"
+      rm -f "$content_file"
       return
     fi
-    # Use awk + getline to splice content from our_source between markers.
-    # This avoids the multiline-variable issue with awk's -v flag.
     local tmp
     tmp="$(mktemp)"
-    awk -v begin="$BEGIN_MARKER" -v end="$END_MARKER" -v src="$our_source" '
+    awk -v begin="$begin" -v end="$end" -v src="$content_file" '
       BEGIN { in_section = 0 }
       $0 == begin {
         in_section = 1
@@ -201,53 +369,145 @@ install_claude_md_merge() {
         print end
         next
       }
-      $0 == end {
-        in_section = 0
-        next
-      }
+      $0 == end { in_section = 0; next }
       in_section == 0 { print }
     ' "$target" > "$tmp"
     mv "$tmp" "$target"
-    say "  updated managed section in: $target"
+    rm -f "$content_file"
+    say "  refreshed section: $feature"
     return
   fi
 
-  # No markers yet — fresh install or append to existing.
   if [[ ! -e "$target" && ! -L "$target" ]]; then
     if [[ "$DRY_RUN" == "1" ]]; then
-      say "  [dry-run] would create $target with managed section"
+      say "  [dry-run] would create $target with section: $feature"
+      rm -f "$content_file"
       return
     fi
     {
-      echo "$BEGIN_MARKER"
-      cat "$our_source"
-      echo "$END_MARKER"
+      echo "$begin"
+      cat "$content_file"
+      echo "$end"
     } > "$target"
-    say "  created (new file): $target"
+    rm -f "$content_file"
+    say "  created file + added section: $feature"
     return
   fi
 
-  # Existing CLAUDE.md, no markers — append.
   if [[ "$DRY_RUN" == "1" ]]; then
-    say "  [dry-run] would append managed section to: $target"
-    say "             (your existing content preserved above markers)"
+    say "  [dry-run] would append section: $feature"
+    rm -f "$content_file"
     return
   fi
   {
     echo ""
-    echo "$BEGIN_MARKER"
-    cat "$our_source"
-    echo "$END_MARKER"
+    echo "$begin"
+    cat "$content_file"
+    echo "$end"
   } >> "$target"
-  say "  appended managed section to: $target"
+  rm -f "$content_file"
+  say "  appended section: $feature"
 }
+
+# Remove a feature's section (and its markers) from target CLAUDE.md.
+remove_feature_section() {
+  local feature="$1"
+  local target="$TARGET_DIR/CLAUDE.md"
+  [[ ! -f "$target" ]] && return
+  local begin end
+  begin="$(feature_begin_marker "$feature")"
+  end="$(feature_end_marker "$feature")"
+  if ! grep -qF "$begin" "$target" 2>/dev/null; then return; fi
+  if [[ "$DRY_RUN" == "1" ]]; then
+    say "  [dry-run] would remove section: $feature"
+    return
+  fi
+  local tmp
+  tmp="$(mktemp)"
+  awk -v begin="$begin" -v end="$end" '
+    BEGIN { in_section = 0 }
+    $0 == begin { in_section = 1; next }
+    $0 == end   { in_section = 0; next }
+    in_section == 0 { print }
+  ' "$target" > "$tmp"
+  mv "$tmp" "$target"
+  say "  removed section: $feature"
+}
+
+# --- personas + hook helpers ---
+
+install_personas() {
+  for persona in "$REPO_DIR/personas/"*.md; do
+    install_with_skip_warn "$persona" "$TARGET_DIR/personas/$(basename "$persona")"
+  done
+}
+
+remove_personas() {
+  [[ ! -d "$TARGET_DIR/personas" ]] && return
+  for repo_persona in "$REPO_DIR/personas/"*.md; do
+    local name target
+    name="$(basename "$repo_persona")"
+    target="$TARGET_DIR/personas/$name"
+    if [[ ! -e "$target" && ! -L "$target" ]]; then continue; fi
+    if symlinks_into_repo "$target"; then
+      if [[ "$DRY_RUN" == "1" ]]; then
+        say "  [dry-run] would remove legacy symlink: $target"
+      else
+        rm "$target"
+        say "  removed legacy symlink: $target"
+      fi
+      continue
+    fi
+    if [[ -f "$target" ]] && diff -q "$target" "$repo_persona" >/dev/null 2>&1; then
+      if [[ "$DRY_RUN" == "1" ]]; then
+        say "  [dry-run] would remove persona: $target"
+      else
+        rm "$target"
+        say "  removed persona: $target"
+      fi
+      continue
+    fi
+    say "  skipped (locally modified persona): $target"
+  done
+}
+
+install_hook() {
+  install_with_skip_warn "$REPO_DIR/hooks/phase3-spawn-audit.py" "$TARGET_DIR/phase3-spawn-audit.py"
+  if [[ "$DRY_RUN" != "1" && -f "$TARGET_DIR/phase3-spawn-audit.py" ]]; then
+    chmod +x "$TARGET_DIR/phase3-spawn-audit.py" 2>/dev/null || true
+  fi
+}
+
+remove_hook() {
+  local target="$TARGET_DIR/phase3-spawn-audit.py"
+  if [[ ! -e "$target" && ! -L "$target" ]]; then return; fi
+  if symlinks_into_repo "$target"; then
+    if [[ "$DRY_RUN" == "1" ]]; then
+      say "  [dry-run] would remove legacy symlink hook: $target"
+    else
+      rm "$target"
+      say "  removed legacy symlink hook: $target"
+    fi
+    return
+  fi
+  if [[ -f "$target" ]] && diff -q "$target" "$REPO_DIR/hooks/phase3-spawn-audit.py" >/dev/null 2>&1; then
+    if [[ "$DRY_RUN" == "1" ]]; then
+      say "  [dry-run] would remove hook: $target"
+    else
+      rm "$target"
+      say "  removed hook: $target"
+    fi
+    return
+  fi
+  say "  skipped (locally modified hook): $target"
+}
+
+# --- --copy mode (whole-file overwrite) ---
 
 install_claude_md_copy() {
   local src="$REPO_DIR/CLAUDE.md"
   local dst="$TARGET_DIR/CLAUDE.md"
 
-  # Existing CLAUDE.md that's NOT identical to repo's → diff check + halt
-  # unless --force (protect user content)
   if [[ -f "$dst" && ! -L "$dst" ]]; then
     if ! diff -q "$dst" "$src" >/dev/null 2>&1; then
       local lines_diff
@@ -257,21 +517,18 @@ install_claude_md_copy() {
       say "    Lines that differ: $lines_diff"
       say ""
       say "    In --copy mode, your file would be backed up and replaced."
-      say "    Personal content above/below ours is NOT preserved in this mode."
-      say "    Use --merge (default) if you want your content kept inline."
+      say "    Use --merge (default) if you want personal content preserved."
       say ""
       say "    Recommended next step:"
       say "      diff $dst $src | less"
       say ""
       if [[ "$FORCE" != "1" && "$DRY_RUN" != "1" ]]; then
         say "    To proceed anyway: re-run with --force"
-        say "    To preview without changing anything: re-run with --dry-run"
         exit 2
       fi
     fi
   fi
 
-  # Legacy: existing symlink into our repo → back it up and replace with a copy
   if symlinks_into_repo "$dst"; then
     if [[ "$DRY_RUN" == "1" ]]; then
       say "  [dry-run] would convert legacy symlink to copy: $dst"
@@ -292,22 +549,20 @@ install_claude_md_copy() {
   say "  copied:    $src -> $dst"
 }
 
-# --- merge notes (only for replace-mode backups with content diffs) ---
+# --- merge notes ---
 write_merge_notes() {
   [[ "$DRY_RUN" == "1" ]] && return
   [[ ! -d "$BACKUP_DIR" ]] && return
-
   local notes="$BACKUP_DIR/MERGE_NOTES.md"
   {
     echo "# Merge Notes"
     echo ""
-    echo "Created by install.sh on $(date) — mode: --$MODE."
+    echo "Created by install.sh on $(date) — mode: --$MODE, features: $FEATURES"
     echo ""
-    echo "Files in this folder were moved here by install.sh because the repo's"
-    echo "version replaced them. If your previous versions had personal or"
-    echo "team-specific rules, merge them back into the live files (or move"
-    echo "them to a project-level CLAUDE.md so they don't conflict with future"
-    echo "repo updates)."
+    echo "Files in this folder were moved here by install.sh. If your previous"
+    echo "versions had personal or team-specific rules, merge them back into the"
+    echo "live files (or move them to a project-level CLAUDE.md so they don't"
+    echo "conflict with future repo updates)."
     echo ""
     echo "Once your config works, this backup folder is safe to delete:"
     echo "  rm -rf \"$BACKUP_DIR\""
@@ -317,40 +572,68 @@ write_merge_notes() {
 
 # --- main ---
 say ""
-if [[ "$DRY_RUN" == "1" ]]; then
-  say "DRY-RUN — no changes will be made."
-fi
+[[ "$DRY_RUN" == "1" ]] && say "DRY-RUN — no changes will be made."
 say "Installing claude-customizations to $TARGET_DIR (mode: --$MODE)..."
+say "Features selected: $FEATURES"
+say ""
 
 mkdir -p "$TARGET_DIR/personas" 2>/dev/null || true
 
-# CLAUDE.md — mode-specific
+# Migrate legacy single-marker installs before per-feature processing
+migrate_legacy_markers
+
 case "$MODE" in
-  merge)  install_claude_md_merge ;;
-  copy)   install_claude_md_copy ;;
+  merge)
+    # Per-feature install: iterate ALL_FEATURES in canonical order.
+    # Selected → install/refresh. Not selected → remove if present.
+    for f in $ALL_FEATURES; do
+      if contains_feature "$f" "$FEATURES"; then
+        # SELECTED — install
+        if [[ "$f" == "personas" ]]; then
+          install_feature_section "$f"
+          install_personas
+        elif [[ "$f" == "hook" ]]; then
+          install_hook
+        else
+          install_feature_section "$f"
+        fi
+      else
+        # NOT SELECTED — remove if previously installed
+        if [[ "$f" == "personas" ]]; then
+          remove_feature_section "$f"
+          remove_personas
+        elif [[ "$f" == "hook" ]]; then
+          remove_hook
+        else
+          remove_feature_section "$f"
+        fi
+      fi
+    done
+    ;;
+  copy)
+    # Whole-file overwrite, plus personas + hook (always all in --copy)
+    install_claude_md_copy
+    install_personas
+    install_hook
+    ;;
 esac
 
-# personas/ — skip-and-warn across all modes
-for persona in "$REPO_DIR/personas/"*.md; do
-  install_with_skip_warn "$persona" "$TARGET_DIR/personas/$(basename "$persona")"
-done
-
-# Stop hook — skip-and-warn across all modes
-install_with_skip_warn "$REPO_DIR/hooks/phase3-spawn-audit.py" "$TARGET_DIR/phase3-spawn-audit.py"
-if [[ "$DRY_RUN" != "1" && -f "$TARGET_DIR/phase3-spawn-audit.py" ]]; then
-  chmod +x "$TARGET_DIR/phase3-spawn-audit.py" 2>/dev/null || true
-fi
-
-# Merge notes if any backups happened
 [[ -d "$BACKUP_DIR" ]] && write_merge_notes
 
+# --- final messages ---
 say ""
 if [[ "$DRY_RUN" == "1" ]]; then
   say "Dry-run complete. No changes made. Re-run without --dry-run to install."
 else
-  say "Done. Next steps:"
-  say "  1. Wire the Stop hook into your settings.json (see README.md → 'Settings.json setup')"
-  say "  2. Restart Claude Code to pick up new config"
+  say "Done. Features installed: $FEATURES"
+  say ""
+  say "Next steps:"
+  if contains_feature "hook" "$FEATURES"; then
+    say "  1. Wire the Stop hook into your settings.json (see README.md → 'Settings.json setup')"
+    say "  2. Restart Claude Code to pick up new config"
+  else
+    say "  1. Restart Claude Code to pick up new config"
+  fi
   if [[ -d "$BACKUP_DIR" ]]; then
     say ""
     say "Backed-up originals: $BACKUP_DIR"
@@ -358,7 +641,7 @@ else
   fi
   if [[ "$MODE" == "merge" ]]; then
     say ""
-    say "Your CLAUDE.md was updated in --merge mode."
-    say "To update to a newer repo version: 'git pull' then 're-run ./install.sh'."
+    say "To update later: 'git pull' then re-run ./install.sh"
+    say "To change feature set: re-run with a different --features=... value"
   fi
 fi
