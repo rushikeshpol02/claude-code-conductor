@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# install.sh — Wire claude-customizations into ~/.claude/
+# install.sh — Wire claude-code-conductor into ~/.claude/
 #
 # This script ONLY makes copies. Nothing in ~/.claude/ depends on this
 # repo's filesystem location, so moving or deleting the repo will not
@@ -215,7 +215,7 @@ fi
 
 # --- guard ---
 if [[ ! -d "$REPO_DIR/personas" ]] || [[ ! -f "$REPO_DIR/CLAUDE.md" ]]; then
-  echo "ERROR: this script must run from the claude-customizations repo root." >&2
+  echo "ERROR: this script must run from the claude-code-conductor repo root." >&2
   echo "       Current REPO_DIR=$REPO_DIR" >&2
   exit 1
 fi
@@ -295,8 +295,8 @@ install_with_skip_warn() {
 
 # --- feature section management ---
 
-feature_begin_marker() { echo "<!-- BEGIN claude-customizations:$1 -->"; }
-feature_end_marker()   { echo "<!-- END claude-customizations:$1 -->"; }
+feature_begin_marker() { echo "<!-- BEGIN claude-code-conductor:$1 -->"; }
+feature_end_marker()   { echo "<!-- END claude-code-conductor:$1 -->"; }
 
 # Extract a feature's section content from the repo's CLAUDE.md
 extract_feature_content() {
@@ -573,7 +573,7 @@ write_merge_notes() {
 # --- main ---
 say ""
 [[ "$DRY_RUN" == "1" ]] && say "DRY-RUN — no changes will be made."
-say "Installing claude-customizations to $TARGET_DIR (mode: --$MODE)..."
+say "Installing claude-code-conductor to $TARGET_DIR (mode: --$MODE)..."
 say "Features selected: $FEATURES"
 say ""
 

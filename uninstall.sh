@@ -3,11 +3,11 @@
 # uninstall.sh — Reverse what install.sh did.
 #
 # Removes:
-#   - All per-feature managed sections (BEGIN/END claude-customizations:<feature>)
+#   - All per-feature managed sections (BEGIN/END claude-code-conductor:<feature>)
 #     from ~/.claude/CLAUDE.md. User's personal content above/below the markers
 #     is preserved. If the file becomes empty after stripping, it's removed.
 #   - Legacy single-marker section (BEGIN/END claude-customizations managed
-#     section) from older installs.
+#     section) from older installs (kept for migration).
 #   - Persona files in ~/.claude/personas/ that match the repo's content
 #     (or are legacy symlinks into the repo). Locally modified files are kept.
 #   - Stop hook ~/.claude/phase3-spawn-audit.py — same logic.
@@ -31,8 +31,8 @@ LEGACY_BEGIN_MARKER="<!-- BEGIN claude-customizations managed section -->"
 LEGACY_END_MARKER="<!-- END claude-customizations managed section -->"
 
 # Per-feature marker prefix (used to find ALL managed sections regardless of feature name)
-PER_FEATURE_BEGIN_PREFIX="<!-- BEGIN claude-customizations:"
-PER_FEATURE_END_PREFIX="<!-- END claude-customizations:"
+PER_FEATURE_BEGIN_PREFIX="<!-- BEGIN claude-code-conductor:"
+PER_FEATURE_END_PREFIX="<!-- END claude-code-conductor:"
 
 for arg in "$@"; do
   case "$arg" in
@@ -74,7 +74,7 @@ symlinks_into_repo() {
   return 1
 }
 
-# Strip ALL claude-customizations managed sections from CLAUDE.md.
+# Strip ALL claude-code-conductor managed sections from CLAUDE.md.
 # Handles both legacy single-marker and per-feature markers.
 strip_all_managed_sections() {
   local target="$TARGET_DIR/CLAUDE.md"
@@ -157,7 +157,7 @@ say ""
 if [[ "$DRY_RUN" == "1" ]]; then
   say "DRY-RUN — no changes will be made."
 fi
-say "Uninstalling claude-customizations from $TARGET_DIR..."
+say "Uninstalling claude-code-conductor from $TARGET_DIR..."
 
 # CLAUDE.md — strip all managed sections (legacy + per-feature)
 strip_all_managed_sections

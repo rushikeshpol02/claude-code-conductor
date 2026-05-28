@@ -1,6 +1,6 @@
-# Claude Customizations
+# claude-code-conductor
 
-Shared Claude Code customizations for the team. Drop-in upgrades to `~/.claude/` that enforce a multi-persona AI team architecture, structured plan-mode standards, and tier-based effort routing — with a Stop hook that catches architecture violations deterministically.
+Drop-in upgrades to `~/.claude/` that turn Claude Code into an orchestrator of multiple AI personas. Adds tier-based effort routing, a multi-persona team architecture (PM, Architect, Engineer + extended specialists), structured plan-mode standards, and a deterministic Stop hook that catches architecture violations. Designed for teams sharing a consistent Claude Code setup.
 
 ## What's in here
 
@@ -11,8 +11,8 @@ Shared Claude Code customizations for the team. Drop-in upgrades to `~/.claude/`
 | `hooks/phase3-spawn-audit.py` | Stop hook that enforces persona spawn fidelity. Blocks turns where Tier 3+ was declared but the team wasn't actually spawned. |
 | `settings.json.template` | Sanitized settings.json template. Wire the hook in here (see setup). |
 | `memory/MEMORY.md.template` | Empty memory index template. Memories accumulate per-workspace as you use Claude Code. |
-| `install.sh` | One-command setup. Symlinks (default) or copies files into `~/.claude/`. Supports `--dry-run`, `--force`, and writes merge notes when existing files differ. |
-| `uninstall.sh` | Reverses `install.sh`. Only removes files this repo owns (symlinks back to here, or copies with matching content). Offers to restore from the most recent backup. |
+| `install.sh` | One-command setup. Merges (default) or copies files into `~/.claude/`. Supports per-feature install via `--features=...`, plus `--dry-run` and `--force`. Generates merge notes when existing files differ. |
+| `uninstall.sh` | Reverses `install.sh`. Strips per-feature managed sections from `CLAUDE.md` (and removes persona files / hook that match the repo's content). Locally modified files are preserved. |
 | `docs/*.md` | Plain-English explainers for each customization system (Effort Routing, Persona Architecture, Plan Mode Standards, Memory Discipline). Read `docs/README.md` first for the connection map. |
 
 ## What's NOT in here (and why)
@@ -24,8 +24,8 @@ Shared Claude Code customizations for the team. Drop-in upgrades to `~/.claude/`
 ## Quick install
 
 ```bash
-git clone <repo-url> ~/claude-customizations
-cd ~/claude-customizations
+git clone <repo-url> ~/claude-code-conductor
+cd ~/claude-code-conductor
 ./install.sh --dry-run    # see exactly what will change first
 ./install.sh              # actually install (default: all features, merge mode)
 ```
@@ -98,7 +98,7 @@ If you want to wholesale replace them, run `./uninstall.sh` first (or remove the
 ## Uninstalling
 
 ```bash
-cd ~/claude-customizations
+cd ~/claude-code-conductor
 ./uninstall.sh --dry-run    # preview what would be removed
 ./uninstall.sh              # actually uninstall
 ```
@@ -112,20 +112,6 @@ Behavior matches the install mode:
 For personas and the hook: same logic — only files that trace back to this repo are removed. Anything you locally modified is preserved.
 
 **Manual step still required:** remove the Stop hook entry from `~/.claude/settings.json` (look for `phase3-spawn-audit.py` in the `Stop` hooks array).
-
-## Uninstalling
-
-```bash
-cd ~/claude-customizations
-./uninstall.sh --dry-run    # preview what would be removed
-./uninstall.sh              # actually uninstall
-```
-
-This only removes files this repo owns (symlinks back to here, or `--copy` installs with content matching the repo). It will **skip** any file that was locally modified — your customizations stay safe.
-
-After file removal, you'll be offered to restore from the most recent `~/.claude/.backup-<timestamp>/` folder.
-
-**Manual step still required:** remove the Stop hook entry from your `~/.claude/settings.json` (look for `phase3-spawn-audit.py` in the `Stop` hooks array).
 
 ## Settings.json setup (manual — has secrets)
 
@@ -189,10 +175,9 @@ Plan-mode plans must contain 8 mandatory sections in order: Context, Clarifying 
 ## Updating
 
 ```bash
-cd ~/claude-customizations
+cd ~/claude-code-conductor
 git pull
-# Symlinks pick up changes automatically.
-# If you installed with --copy, re-run ./install.sh
+./install.sh         # re-run to refresh content in your CLAUDE.md
 ```
 
 If `CLAUDE.md` itself changes substantially, Claude Code picks up the new version at the next session start (it's loaded fresh each session).
