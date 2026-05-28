@@ -30,24 +30,25 @@ cd ~/claude-customizations
 ./install.sh              # actually install (default: merge mode)
 ```
 
-By default, install.sh runs in **merge mode** — it appends our content into your existing `CLAUDE.md` wrapped in managed-section markers. Your personal rules stay untouched. Persona files and the Stop hook are symlinked separately.
+By default, install.sh runs in **merge mode** — it appends our content into your existing `CLAUDE.md` wrapped in managed-section markers. Your personal rules stay untouched.
+
+**install.sh only makes copies** — nothing in `~/.claude/` depends on this repo's filesystem location. You can move or delete this repo later and your config will keep working. To pick up repo updates, re-run `./install.sh` after `git pull`.
 
 ### Install modes
 
 Pick ONE (default is `--merge`):
 
-| Mode | What it does to your CLAUDE.md | Auto-updates? |
-|---|---|---|
-| **`--merge`** (default) | Appends our content inside `<!-- BEGIN claude-customizations managed section -->` ... `<!-- END ... -->` markers. Idempotent: re-runs replace the content between markers in place. Your content above/below stays. | No — re-run install.sh after `git pull` |
-| `--symlink` | Replaces your `CLAUDE.md` with a symlink to the repo's version. Your existing content is backed up but NOT merged. | Yes (via `git pull`) |
-| `--copy` | Copies the repo's `CLAUDE.md` over yours. Snapshot at install time. | No — re-run install.sh |
+| Mode | What it does to your CLAUDE.md |
+|---|---|
+| **`--merge`** (default) | Appends our content inside `<!-- BEGIN claude-customizations managed section -->` ... `<!-- END ... -->` markers. Idempotent: re-runs replace the content between markers in place. Your content above/below stays. |
+| `--copy` | Copies the repo's `CLAUDE.md` over yours (after backing yours up). Use this only if you have no personal content in `CLAUDE.md`. |
 
 ### Helper flags
 
 | Flag | Purpose |
 |---|---|
 | `--dry-run` | Show what would happen. Make no changes. **Run this first.** |
-| `--force` | Proceed even if your existing `CLAUDE.md` differs (only applies in `--symlink`/`--copy` modes). |
+| `--force` | Proceed even if your existing `CLAUDE.md` differs (only applies in `--copy` mode). |
 
 ### How merge mode handles your CLAUDE.md
 
@@ -59,16 +60,16 @@ Pick ONE (default is `--merge`):
 
 This is the recommended mode for first-time users. You can run `./install.sh` after every `git pull` and your personal content is never at risk.
 
-### How persona files and the Stop hook are handled (all modes)
+### How persona files and the Stop hook are handled (both modes)
 
-Personas and the hook script use **skip-and-warn** behavior across all install modes:
+Personas and the hook script are **always installed as copies** — they live independently in `~/.claude/` and won't break if you move or delete this repo. Skip-and-warn behavior protects local customizations:
 
-- **File doesn't exist** → install ours
-- **File is a symlink into our repo (from a prior install)** → refresh
+- **File doesn't exist** → install a fresh copy
 - **File content matches ours** → refresh (no-op)
+- **File is a legacy symlink** (from an older install) → convert to a copy
 - **File content differs** → **skip with warning**; your version preserved. Re-run after removing your version if you want ours.
 
-This protects any local customizations you've made to specific persona files. If you want to wholesale replace them, run `./uninstall.sh` first (or remove the specific files), then re-install.
+If you want to wholesale replace them, run `./uninstall.sh` first (or remove the specific files), then re-install.
 
 ## Uninstalling
 
@@ -81,10 +82,10 @@ cd ~/claude-customizations
 Behavior matches the install mode:
 
 - **Merge-installed `CLAUDE.md`**: strips the content between our markers, leaving your personal content intact. If only our content was in the file, the file is removed entirely.
-- **Symlink-installed `CLAUDE.md`**: removes the symlink.
 - **Copy-installed `CLAUDE.md`**: removes the copy if its content matches the repo's. Skips if you've locally modified it.
+- **Legacy symlinks** (from older installs that used `--symlink` mode): removed cleanly.
 
-For personas and the hook: same logic — only files that trace back to this repo are removed.
+For personas and the hook: same logic — only files that trace back to this repo are removed. Anything you locally modified is preserved.
 
 **Manual step still required:** remove the Stop hook entry from `~/.claude/settings.json` (look for `phase3-spawn-audit.py` in the `Stop` hooks array).
 

@@ -2,29 +2,31 @@
 #
 # install.sh — Wire claude-customizations into ~/.claude/
 #
+# This script ONLY makes copies. Nothing in ~/.claude/ depends on this
+# repo's filesystem location, so moving or deleting the repo will not
+# break your config. To pick up repo updates, re-run install.sh.
+#
 # Modes (choose ONE; default is --merge):
 #   --merge      Append our CLAUDE.md content into your existing one,
 #                wrapped in managed-section markers. Idempotent: re-runs
 #                replace the content between markers in place. Your own
 #                rules above/below the markers are preserved forever.
-#                CANNOT be combined with symlink behavior.
 #
-#   --symlink    Replace your CLAUDE.md with a symlink to the repo's version.
-#                `git pull` propagates updates automatically. Your existing
-#                CLAUDE.md content is backed up but NOT merged.
+#   --copy       Copy the repo's CLAUDE.md over yours (snapshot at install
+#                time). Re-run install.sh to update. Your existing CLAUDE.md
+#                is backed up but NOT merged.
 #
-#   --copy       Copy the repo's CLAUDE.md over yours (snapshot at install time).
-#                Re-run install.sh to update. Your existing content backed up.
-#
-# Behavior across all modes:
-#   - Persona files: skip-and-warn if you have a file with the same name and
-#     different content. The hook script: same skip-and-warn.
+# Behavior across both modes:
+#   - Persona files and the Stop hook are always installed as copies
+#     (not symlinks). Re-run install.sh after 'git pull' to refresh them.
+#   - Persona files / hook: skip-and-warn if you have a file with the
+#     same name and different content. Your version is preserved.
 #   - Existing files we replace get backed up to ~/.claude/.backup-<timestamp>/
 #   - A MERGE_NOTES.md is generated in the backup folder when content differs.
 #
 # Helper flags:
 #   --dry-run   Show what would happen, make no changes.
-#   --force     Suppress halt-on-diff in --symlink/--copy modes.
+#   --force     Suppress halt-on-diff in --copy mode.
 
 set -euo pipefail
 
@@ -46,38 +48,35 @@ END_MARKER="<!-- END claude-customizations managed section -->"
 for arg in "$@"; do
   case "$arg" in
     --merge)   MODE="merge" ;;
-    --symlink) MODE="symlink" ;;
     --copy)    MODE="copy" ;;
     --dry-run) DRY_RUN=1 ;;
     --force)   FORCE=1 ;;
     --help|-h)
       cat <<EOF
-Usage: install.sh [--merge|--symlink|--copy] [--dry-run] [--force]
+Usage: install.sh [--merge|--copy] [--dry-run] [--force]
+
+This script only makes copies. Nothing in ~/.claude/ depends on the
+repo's filesystem location. Re-run install.sh after 'git pull' to update.
 
   --merge      (DEFAULT) Append our CLAUDE.md content into your existing
                one inside managed-section markers. Idempotent on re-run.
                Your personal rules above/below the markers are preserved.
-               Run install.sh again after 'git pull' to update.
-
-  --symlink    Replace ~/.claude/CLAUDE.md with a symlink to the repo's
-               version. Auto-updates on 'git pull'. Your existing content
-               is backed up but NOT merged.
 
   --copy       Copy the repo's CLAUDE.md over yours. Snapshot at install
-               time; re-run install.sh to update. Existing content backed up.
+               time. Existing CLAUDE.md content backed up. Use this only
+               if you have no personal content to preserve.
 
   --dry-run    Show what would happen. Make no changes. Always safe.
-  --force      In --symlink/--copy modes only: proceed even if your
-               existing CLAUDE.md differs substantially from the repo's.
+  --force      In --copy mode only: proceed even if your existing
+               CLAUDE.md differs substantially from the repo's.
 
-Across all modes:
-  - Persona files (~/.claude/personas/*.md): skip-and-warn if a file with
-    the same name already exists with different content. Your version is
-    preserved; ours is not installed for that file.
-  - Stop hook (~/.claude/phase3-spawn-audit.py): same skip-and-warn.
-
-Files replaced get backed up to ~/.claude/.backup-<timestamp>/. A
-MERGE_NOTES.md file is generated when content differs.
+Across both modes:
+  - Persona files and the Stop hook are always installed as copies.
+  - Skip-and-warn: if a persona file or the hook already exists with
+    different content, your version is preserved and ours is not
+    installed for that file.
+  - Replaced files go to ~/.claude/.backup-<timestamp>/ with a
+    MERGE_NOTES.md guide when content differs.
 
 settings.json is NOT installed — see README.md for manual steps (it
 contains API keys and user-specific paths).
@@ -132,53 +131,40 @@ backup_if_exists() {
   fi
 }
 
-# Used for persona files and hook script (skip-and-warn mode).
+# Used for persona files and hook script (skip-and-warn; always copies).
 install_with_skip_warn() {
   local src="$1"
   local dst="$2"
-  # File doesn't exist → install fresh
+  # File doesn't exist → install fresh copy
   if [[ ! -e "$dst" && ! -L "$dst" ]]; then
     if [[ "$DRY_RUN" == "1" ]]; then
-      [[ "$MODE" == "symlink" || "$MODE" == "merge" ]] && say "  [dry-run] would symlink: $dst -> $src" || say "  [dry-run] would copy: $src -> $dst"
+      say "  [dry-run] would copy: $src -> $dst"
     else
       mkdir -p "$(dirname "$dst")"
-      if [[ "$MODE" == "copy" ]]; then
-        cp "$src" "$dst"
-        say "  copied:    $src -> $dst"
-      else
-        # merge & symlink modes both symlink the per-file artifacts (personas + hook)
-        ln -s "$src" "$dst"
-        say "  symlinked: $dst -> $src"
-      fi
+      cp "$src" "$dst"
+      say "  copied:    $src -> $dst"
     fi
     return
   fi
-  # Symlink into our repo from a prior install → replace silently
+  # Legacy: symlink into our repo from a prior install (pre-2026-05-28 version)
+  # → replace with a copy so the user no longer depends on repo location
   if symlinks_into_repo "$dst"; then
     if [[ "$DRY_RUN" == "1" ]]; then
-      say "  [dry-run] would refresh symlink: $dst"
+      say "  [dry-run] would convert legacy symlink to copy: $dst"
     else
       rm "$dst"
-      if [[ "$MODE" == "copy" ]]; then
-        cp "$src" "$dst"
-      else
-        ln -s "$src" "$dst"
-      fi
-      say "  refreshed: $dst"
+      cp "$src" "$dst"
+      say "  converted legacy symlink to copy: $dst"
     fi
     return
   fi
-  # Plain file with matching content → safe to replace
+  # Plain file with matching content → safe to refresh
   if [[ -f "$dst" ]] && diff -q "$dst" "$src" >/dev/null 2>&1; then
     if [[ "$DRY_RUN" == "1" ]]; then
-      say "  [dry-run] would replace (content matches): $dst"
+      say "  [dry-run] would refresh (content matches): $dst"
     else
       rm "$dst"
-      if [[ "$MODE" == "copy" ]]; then
-        cp "$src" "$dst"
-      else
-        ln -s "$src" "$dst"
-      fi
+      cp "$src" "$dst"
       say "  refreshed: $dst"
     fi
     return
@@ -256,12 +242,12 @@ install_claude_md_merge() {
   say "  appended managed section to: $target"
 }
 
-install_claude_md_symlink_or_copy() {
+install_claude_md_copy() {
   local src="$REPO_DIR/CLAUDE.md"
   local dst="$TARGET_DIR/CLAUDE.md"
 
-  # Existing CLAUDE.md that's NOT a symlink to our repo and NOT identical →
-  # diff check + halt unless --force (idea: protect user content)
+  # Existing CLAUDE.md that's NOT identical to repo's → diff check + halt
+  # unless --force (protect user content)
   if [[ -f "$dst" && ! -L "$dst" ]]; then
     if ! diff -q "$dst" "$src" >/dev/null 2>&1; then
       local lines_diff
@@ -270,7 +256,7 @@ install_claude_md_symlink_or_copy() {
       say "⚠️  Your existing CLAUDE.md differs from this repo's version."
       say "    Lines that differ: $lines_diff"
       say ""
-      say "    In --$MODE mode, your file would be backed up and replaced."
+      say "    In --copy mode, your file would be backed up and replaced."
       say "    Personal content above/below ours is NOT preserved in this mode."
       say "    Use --merge (default) if you want your content kept inline."
       say ""
@@ -285,18 +271,25 @@ install_claude_md_symlink_or_copy() {
     fi
   fi
 
-  backup_if_exists "$dst"
-  if [[ "$DRY_RUN" == "1" ]]; then
-    [[ "$MODE" == "symlink" ]] && say "  [dry-run] would symlink: $dst -> $src" || say "  [dry-run] would copy: $src -> $dst"
+  # Legacy: existing symlink into our repo → back it up and replace with a copy
+  if symlinks_into_repo "$dst"; then
+    if [[ "$DRY_RUN" == "1" ]]; then
+      say "  [dry-run] would convert legacy symlink to copy: $dst"
+    else
+      rm "$dst"
+      cp "$src" "$dst"
+      say "  converted legacy symlink to copy: $dst"
+    fi
     return
   fi
-  if [[ "$MODE" == "symlink" ]]; then
-    ln -s "$src" "$dst"
-    say "  symlinked: $dst -> $src"
-  else
-    cp "$src" "$dst"
-    say "  copied:    $src -> $dst"
+
+  backup_if_exists "$dst"
+  if [[ "$DRY_RUN" == "1" ]]; then
+    say "  [dry-run] would copy: $src -> $dst"
+    return
   fi
+  cp "$src" "$dst"
+  say "  copied:    $src -> $dst"
 }
 
 # --- merge notes (only for replace-mode backups with content diffs) ---
@@ -333,8 +326,8 @@ mkdir -p "$TARGET_DIR/personas" 2>/dev/null || true
 
 # CLAUDE.md — mode-specific
 case "$MODE" in
-  merge)             install_claude_md_merge ;;
-  symlink|copy)      install_claude_md_symlink_or_copy ;;
+  merge)  install_claude_md_merge ;;
+  copy)   install_claude_md_copy ;;
 esac
 
 # personas/ — skip-and-warn across all modes
