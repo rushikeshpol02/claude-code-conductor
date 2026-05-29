@@ -7,12 +7,13 @@
 # break your config. To pick up repo updates, re-run install.sh.
 #
 # Features (each installable independently):
-#   tier               Effort Routing Framework (Quick/Standard/Analytical/Deep)
-#   interaction-rules  AskUserQuestion timing
-#   plan-mode          Plan Mode Standards (7 standards + 8 mandatory sections)
-#   personas           AI Team / Persona Architecture (CLAUDE.md section + 15 persona files)
-#   memory             Memory Discipline (cross-session learning)
-#   hook               Phase 3 spawn-audit Stop hook (deterministic backstop)
+#   tier                  Effort Routing Framework (Quick/Standard/Analytical/Deep)
+#   interaction-rules     AskUserQuestion timing
+#   tool-use-discipline   Bash batching rule (reduces chat clutter)
+#   plan-mode             Plan Mode Standards (7 standards + 8 mandatory sections)
+#   personas              AI Team / Persona Architecture (CLAUDE.md section + 15 persona files)
+#   memory                Memory Discipline (cross-session learning)
+#   hook                  Phase 3 spawn-audit Stop hook (deterministic backstop)
 #
 # Dependencies (auto-resolved):
 #   personas → tier
@@ -48,7 +49,7 @@ BACKUP_DIR="$TARGET_DIR/.backup-$TIMESTAMP"
 
 # Canonical feature order (controls section ordering in CLAUDE.md).
 # 'hook' isn't a CLAUDE.md section; it's listed last as a marker-only entry.
-ALL_FEATURES="tier interaction-rules plan-mode personas memory hook"
+ALL_FEATURES="tier interaction-rules tool-use-discipline plan-mode personas memory hook"
 
 # Legacy single-marker (from pre-2026-05-28 installs). Migrated to per-feature markers.
 LEGACY_BEGIN_MARKER="<!-- BEGIN claude-customizations managed section -->"
@@ -60,12 +61,13 @@ LEGACY_END_MARKER="<!-- END claude-customizations managed section -->"
 # has no CLAUDE.md content (e.g., 'hook' is script-only).
 feature_section() {
   case "$1" in
-    tier)              echo "## Effort Routing Framework" ;;
-    interaction-rules) echo "## Interaction Rules" ;;
-    plan-mode)         echo "## Plan Mode Standards" ;;
-    personas)          echo "## AI Team" ;;
-    memory)            echo "## Memory Discipline" ;;
-    *)                 echo "" ;;
+    tier)                  echo "## Effort Routing Framework" ;;
+    interaction-rules)     echo "## Interaction Rules" ;;
+    tool-use-discipline)   echo "## Tool Use Discipline" ;;
+    plan-mode)             echo "## Plan Mode Standards" ;;
+    personas)              echo "## AI Team" ;;
+    memory)                echo "## Memory Discipline" ;;
+    *)                     echo "" ;;
   esac
 }
 
@@ -81,13 +83,14 @@ feature_dep() {
 # Returns a human-readable label for messages.
 feature_label() {
   case "$1" in
-    tier)              echo "Effort Routing Framework" ;;
-    interaction-rules) echo "Interaction Rules" ;;
-    plan-mode)         echo "Plan Mode Standards" ;;
-    personas)          echo "AI Team / Persona Architecture" ;;
-    memory)            echo "Memory Discipline" ;;
-    hook)              echo "Phase 3 Spawn-Audit Hook" ;;
-    *)                 echo "$1" ;;
+    tier)                  echo "Effort Routing Framework" ;;
+    interaction-rules)     echo "Interaction Rules" ;;
+    tool-use-discipline)   echo "Tool Use Discipline (bash batching)" ;;
+    plan-mode)             echo "Plan Mode Standards" ;;
+    personas)              echo "AI Team / Persona Architecture" ;;
+    memory)                echo "Memory Discipline" ;;
+    hook)                  echo "Phase 3 Spawn-Audit Hook" ;;
+    *)                     echo "$1" ;;
   esac
 }
 
@@ -156,12 +159,13 @@ This script only makes copies. Nothing in ~/.claude/ depends on the
 repo's filesystem location. Re-run install.sh after 'git pull' to update.
 
 Features (auto-resolves dependencies):
-  tier               Effort Routing Framework
-  interaction-rules  AskUserQuestion timing
-  plan-mode          Plan Mode Standards
-  personas           AI Team / Persona Architecture (needs: tier)
-  memory             Memory Discipline
-  hook               Phase 3 Spawn-Audit Hook (needs: personas, tier)
+  tier                  Effort Routing Framework
+  interaction-rules     AskUserQuestion timing
+  tool-use-discipline   Bash batching rule (reduces chat clutter)
+  plan-mode             Plan Mode Standards
+  personas              AI Team / Persona Architecture (needs: tier)
+  memory                Memory Discipline
+  hook                  Phase 3 Spawn-Audit Hook (needs: personas, tier)
 
   --features=LIST    Comma-separated. Default: all
                      Examples:

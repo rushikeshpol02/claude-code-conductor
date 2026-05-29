@@ -83,6 +83,20 @@ When the user explicitly says to ask questions (e.g. "ask me questions", "ask cl
 
 ---
 
+## Tool Use Discipline
+
+**Bash composition.** When the next bash call is **read-only recon** (`cd`, `ls`, `find`, `grep`, `cat`, `pwd`, `head`, `tail`, `wc`, `git status/log/diff`, `which`) AND shares shell context (same cwd, same setup) with the previous call, compose them into a single bash invocation using `&&`, `;`, or pipes. Issue separate calls only when:
+
+- The next command depends on a side effect of the previous (build artifact, install, mutation, branch switch), OR
+- It's destructive (`rm`, `git reset`, force push) — failure visibility matters more than terseness, OR
+- The calls are genuinely independent and targeting unrelated paths (parallel `Agent`-tool calls in one message are still fine here).
+
+**Self-test before each Bash call:** "Could I have inlined the previous call's `cd`/`ls`/`find` into this one?" If yes, recompose.
+
+Scope: this rule applies to the main response thread only. Subagent (Explore, Task) internal scopes are out of scope — their bash density doesn't pollute the parent chat.
+
+---
+
 ## Plan Mode Standards
 
 Every plan must meet these standards automatically.

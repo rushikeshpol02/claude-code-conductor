@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`tool-use-discipline` feature** — 7th installable feature. Adds a `## Tool Use Discipline` section to `CLAUDE.md` instructing the model to compose read-only recon bash calls (`cd`, `ls`, `find`, `grep`, `cat`, `head`, `tail`, `wc`, `git status/log/diff`, `which`) into a single shell invocation when they share context. Sequential-dependent work, destructive ops, and parallel independent recon remain separate. Reduces chat clutter from consecutive expanded bash blocks.
+- Origin: 14-day JSONL audit of one user's sessions (1,200 bash calls / 78 sessions, 72% recon-verb share, max consecutive streak of 27). Designed via a 3-persona team review (Architect / PM / Engineer).
+- Known limit: the Bash tool's own system prompt encourages parallelism for speed — this CLAUDE.md rule is an undertuned counterweight. Expect ~60–70% reduction in consecutive recon bash blocks, not a full fix.
+
 ## [0.1.0] — 2026-05-28
 
 First public release. Adds rigor to Claude Code: structured deliberation, multi-perspective AI review, and deterministic backstops the LLM can't self-rationalize past.

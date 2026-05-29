@@ -51,6 +51,10 @@ A ~140-line Python script wired into `~/.claude/settings.json`. Runs after every
 `AskUserQuestion` tool required for 3+ clarifying questions (not bullet lists buried in prose).
 **Solves:** model burying important decisions in text the user skims past.
 
+### 7. Tool Use Discipline
+Forces read-only recon bash calls (`cd`, `ls`, `find`, `grep`, `cat`, etc.) sharing the same shell context to compose into a single invocation using `&&`, `;`, or pipes. Sequential-dependent work, destructive ops, and genuinely independent calls remain separate.
+**Solves:** chat clutter from 5–10+ consecutive expanded bash blocks per task. Audit data showed 72% of bash calls in a 14-day window were combinable recon; this rule targets that subtype specifically.
+
 ---
 
 ## How to install
